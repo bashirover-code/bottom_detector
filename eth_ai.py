@@ -18,8 +18,8 @@ st.markdown("### 🚀 Определение глобальных минимум
 def load_data():
     """Пытается загрузить данные из нескольких источников"""
     
-    # ----- СПОСОБ 1: CryptoCompare (Безопасный вариант) -----
-        try:
+    # ----- СПОСОБ 1: CryptoCompare (с API ключом) -----
+    try:
         # Проверяем, настроен ли ключ в секретах Streamlit
         if "CRYPTOCOMPARE_KEY" in st.secrets:
             API_KEY = st.secrets["CRYPTOCOMPARE_KEY"]
@@ -27,7 +27,7 @@ def load_data():
             url = "https://min-api.cryptocompare.com/data/v2/histoday"
             params = {
                 "fsym": "ETH",
-                "tsym": "USDT",
+                "tsym": "USD",
                 "limit": 500,
                 "api_key": API_KEY
             }
@@ -43,11 +43,10 @@ def load_data():
                     df["close"] = df["close"].astype(float)
                     df = df.sort_values("date").reset_index(drop=True)
                     
-                    st.success("✅ Данные загружены через CryptoCompare (Безопасное подключение)")
+                    st.success("✅ Данные загружены через CryptoCompare")
                     return df, "CryptoCompare"
     except Exception as e:
-        # Если что-то пошло не так (например, нет файла с ключом), скрипт просто пойдет к Способу №2
-        pass
+        pass  # Если ошибка — идём дальше
     
     # ----- СПОСОБ 2: CoinGecko (публичный API) -----
     try:
