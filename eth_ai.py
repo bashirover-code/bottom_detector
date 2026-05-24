@@ -26,22 +26,22 @@ STOCK_LIST = [
 ]
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ВЫЗОВА CLAUDE API (Claude 4.5)
+# ФУНКЦИЯ ДЛЯ ВЫЗОВА DeepSeek API (бесплатно!)
 # ============================================================
 
-def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text):
-    """Отправляет запрос к Claude API и возвращает анализ"""
+def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text):
+    """Отправляет запрос к DeepSeek API и возвращает анализ"""
     
     # Получаем API ключ из секретов
-    claude_key = st.secrets.get("CLAUDE_API_KEY", "")
+    deepseek_key = st.secrets.get("DEEPSEEK_API_KEY", "")
     
-    if not claude_key:
-        return "❌ API ключ Claude не найден. Добавь CLAUDE_API_KEY в Secrets."
+    if not deepseek_key:
+        return "❌ API ключ DeepSeek не найден. Добавь DEEPSEEK_API_KEY в Secrets.\n\nПолучить ключ: platform.deepseek.com"
     
     # Определяем тип актива
     asset_type = "криптовалюта" if asset_symbol in CRYPTO_LIST else "акция"
     
-    # Формируем промпт для Claude
+    # Формируем промпт для DeepSeek
     prompt = f"""Ты профессиональный финансовый аналитик. Проанализируй {asset_name} ({asset_symbol}, {asset_type}):
 
 ТЕКУЩИЕ ДАННЫЕ:
@@ -56,26 +56,29 @@ def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, cur
 - Z > 1.5: эйфория (пора продавать)
 - -0.5 < Z < 0.5: нейтрально
 
-Напиши КРАТКИЙ анализ (3-5 предложений):
+Напиши КРАТКИЙ анализ (3-5 предложений) на русском:
 1. Что означает текущий сигнал простыми словами
 2. Стоит ли сейчас покупать, продавать или держать
-3. Главный фактор риска, на который стоит обратить внимание
+3. Главный фактор риска
 
 Будь конкретен и полезен. Не пиши лишнего. Используй простой русский язык."""
 
-    # Запрос к Claude API
-    url = "https://api.anthropic.com/v1/messages"
+    # Запрос к DeepSeek API
+    url = "https://api.deepseek.com/v1/chat/completions"
     
     headers = {
-        "x-api-key": claude_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
+        "Authorization": f"Bearer {deepseek_key}",
+        "Content-Type": "application/json"
     }
     
     data = {
-        "model": "claude-4.5-sonnet-20250501",  # Claude 4.5 Sonnet
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "Ты профессиональный финансовый аналитик. Отвечай кратко и по делу."},
+            {"role": "user", "content": prompt}
+        ],
         "max_tokens": 500,
-        "messages": [{"role": "user", "content": prompt}]
+        "temperature": 0.7
     }
     
     try:
@@ -83,7 +86,7 @@ def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, cur
         
         if response.status_code == 200:
             result = response.json()
-            return result["content"][0]["text"]
+            return result["choices"][0]["message"]["content"]
         else:
             return f"❌ Ошибка API: {response.status_code}\n{response.text[:200]}"
             
@@ -91,7 +94,7 @@ def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, cur
         return f"❌ Ошибка подключения: {str(e)[:100]}"
 
 # ============================================================
-# НАСТРОЙКИ ПОРОГОВ (как на скриншоте)
+# НАСТРОЙКИ ПОРОГОВ
 # ============================================================
 
 with st.sidebar:
@@ -112,7 +115,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("📡 Источник: CryptoCompare (крипто), yfinance (акции)")
     st.caption("🕐 Обновление: каждые 5 минут")
-    st.caption("🤖 Модель: Claude 4.5 Sonnet")
+    st.caption("🤖 AI-анализ: DeepSeek (бесплатно)")
 
 # ============================================================
 # ЗАГРУЗКА ДАННЫХ
@@ -239,15 +242,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# КНОПКА AI-АНАЛИЗА
+# КНОПКА AI-АНАЛИЗА (DeepSeek)
 # ============================================================
 
 st.markdown("---")
-st.subheader("🤖 AI-анализ актива")
+st.subheader("🤖 AI-анализ актива (DeepSeek)")
 
 if st.button(f"📊 Получить AI-анализ для {selected_asset}", type="primary"):
-    with st.spinner(f"🧠 Claude 4.5 анализирует {selected_asset}..."):
-        analysis = call_claude_analysis(
+    with st.spinner(f"🧠 DeepSeek анализирует {selected_asset}..."):
+        analysis = call_deepseek_analysis(
             asset_name, selected_asset, 
             current_price, current_z, current_prob, 
             signal_text.split("—")[0]
@@ -255,9 +258,9 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
     
     st.markdown(f"""
     <div style='background: #1a1a2e; padding: 20px; border-radius: 16px; margin: 10px 0;'>
-        <h4 style='margin-bottom: 10px;'>📈 Анализ от Claude AI</h4>
+        <h4 style='margin-bottom: 10px;'>📈 Анализ от DeepSeek AI</h4>
         <p style='color: #e2e8f0;'>{analysis}</p>
-        <p style='color: #6b7280; font-size: 12px; margin-top: 10px;'>⚡ Модель: Claude 4.5 Sonnet | Анализ на основе текущих данных</p>
+        <p style='color: #6b7280; font-size: 12px; margin-top: 10px;'>⚡ Модель: DeepSeek Chat | Бесплатный API | Анализ на основе текущих данных</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -402,4 +405,4 @@ if all_data:
 st.markdown("---")
 st.caption(f"📅 Последнее обновление: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.caption("📡 Источник: CryptoCompare (криптовалюты), yfinance (акции)")
-st.caption("🤖 AI-анализ от Claude 4.5 Sonnet | ⚠️ Не является инвестиционной рекомендацией")
+st.caption("🤖 AI-анализ от DeepSeek (бесплатно) | ⚠️ Не является инвестиционной рекомендацией")
