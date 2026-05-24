@@ -11,12 +11,12 @@ st.title("📊 ETH Детектор Дна")
 st.markdown("### 🚀 Определение глобальных минимумов Ethereum")
 
 # ============================================================
-# МНОГОУРОВНЕВАЯ ЗАГРУЗКА ДАННЫХ
+# ЗАГРУЗКА ДАННЫХ С CRYPTOCOMPARE API
 # ============================================================
 
 @st.cache_data(ttl=3600)
 def load_data():
-    """Пытается загрузить данные из нескольких источников"""
+    """Загружает данные с CryptoCompare API"""
     
     # ----- СПОСОБ 1: CryptoCompare (с API ключом) -----
     try:
@@ -32,10 +32,11 @@ def load_data():
                 "api_key": API_KEY
             }
             
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
+                
                 if data.get("Response") == "Success":
                     raw_data = data["Data"]["Data"]
                     df = pd.DataFrame(raw_data)
@@ -43,17 +44,21 @@ def load_data():
                     df["close"] = df["close"].astype(float)
                     df = df.sort_values("date").reset_index(drop=True)
                     
-                    st.success("✅ Данные загружены через CryptoCompare")
+                    st.success("✅ Данные загружены через CryptoCompare API")
                     return df, "CryptoCompare"
+                else:
+                    st.error(f"Ошибка CryptoCompare: {data.get('Message')}")
+            else:
+                st.error(f"HTTP ошибка: {response.status_code}")
     except Exception as e:
-        pass  # Если ошибка — идём дальше
+        st.error(f"Ошибка подключения к CryptoCompare: {e}")
     
-    # ----- СПОСОБ 2: CoinGecko (публичный API) -----
+    # ----- СПОСОБ 2: CoinGecko (публичный API, без ключа) -----
     try:
         url = "https://api.coingecko.com/api/v3/coins/ethereum/market_chart"
         params = {"vs_currency": "usd", "days": "500", "interval": "daily"}
         
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
