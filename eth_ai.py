@@ -12,7 +12,7 @@ st.title("📊 Мульти-актив Детектор Дна")
 st.markdown("### 🚀 Определение глобальных минимумов для криптовалют и акций")
 
 # ============================================================
-# ТВОЙ СПИСОК АКТИВОВ (только нужные)
+# ТВОЙ СПИСОК АКТИВОВ
 # ============================================================
 
 CRYPTO_LIST = [
@@ -34,12 +34,15 @@ with st.sidebar:
     st.markdown("---")
     
     st.subheader("📉 ЗОНА ПОКУПКИ (ДНО)")
-    tier2_threshold = st.slider("Tier-2 plateau (зелёная линия)", -2.5, -0.5, -1.2, 0.1)
-    pre_reg_threshold = st.slider("Pre-reg locked (красная линия)", -2.5, -0.5, -2.0, 0.1)
+    tier2_threshold = st.slider("Tier-2 plateau (зелёная линия)", -2.5, -0.5, -1.2, 0.1,
+                                 help="При пересечении — начинай присматриваться")
+    pre_reg_threshold = st.slider("Pre-reg locked (красная линия)", -2.5, -0.5, -2.0, 0.1,
+                                   help="Экстремальное дно — исторически лучший вход")
     
     st.markdown("---")
     st.subheader("📈 ЗОНА ПРОДАЖИ (ЭЙФОРИЯ)")
-    euphoria_threshold = st.slider("Euphoria zone (красная зона)", 0.5, 2.5, 1.5, 0.1)
+    euphoria_threshold = st.slider("Euphoria zone (красная зона)", 0.5, 2.5, 1.5, 0.1,
+                                    help="При превышении — рынок перегрет")
     
     st.markdown("---")
     st.caption("📡 Источник: CryptoCompare (крипто), yfinance (акции)")
@@ -164,8 +167,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ГРАФИКИ
+# ГРАФИК 1: ЦВЕТНАЯ ЛИНИЯ ЦЕНЫ (С ПОДСКАЗКАМИ ПРИ НАВЕДЕНИИ)
 # ============================================================
+
+st.markdown("---")
+st.subheader("📈 ГРАФИК ЦЕНЫ — ЦВЕТ ПО Z-SCORE")
+st.caption("🟢 Зелёный = дно | ⚪ Серый = нейтрально | 🔴 Красный = эйфория | **Наведи курсор на линию — увидишь дату и цену**")
 
 df_chart = df.tail(500).copy()
 
@@ -179,23 +186,68 @@ def get_color(z):
     else: return "#ff2200"
 
 fig = go.Figure()
+
+# Рисуем цветные сегменты (без подсказок, чтобы не дублировать)
 for i in range(len(df_chart) - 1):
+    color = get_color(df_chart["z_score"].iloc[i])
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=get_color(df_chart["z_score"].iloc[i]), width=2),
-        showlegend=False, hoverinfo='skip'
+        mode='lines',
+        line=dict(color=color, width=2),
+        showlegend=False,
+        hoverinfo='skip'  # ← убираем подсказки с сегментов
     ))
 
-fig.update_layout(height=450, template="plotly_dark", xaxis_title="Дата",
-                  yaxis_title="Цена (USD)", yaxis_type="log" if current_price > 100 else "linear")
+# ДОБАВЛЯЕМ ТОЧКИ С ПОДСКАЗКАМИ (при наведении)
+fig.add_trace(go.Scatter(
+    x=df_chart["date"],
+    y=df_chart["close"],
+    mode='markers',
+    marker=dict(color='rgba(0,0,0,0)', size=1),  # невидимые точки
+    hoverinfo='text',
+    text=[f"📅 <b>{d.strftime('%Y-%m-%d')}</b><br>💰 <b>${p:,.2f}</b><br>📊 Z-Score: <b>{z:.2f}</b>" 
+          for d, p, z in zip(df_chart["date"], df_chart["close"], df_chart["z_score"])],
+    name="Информация",
+    hovertemplate='%{text}<extra></extra>'  # чистый тултип
+))
+
+fig.update_layout(
+    height=500,
+    template="plotly_dark",
+    xaxis_title="Дата",
+    yaxis_title="Цена (USD)",
+    yaxis_type="log" if current_price > 100 else "linear",
+    hovermode="x unified"  # показывает данные для всех точек на одной дате
+)
+
 st.plotly_chart(fig, use_container_width=True)
 
-# Z-Score график
+# ============================================================
+# ГРАФИК 2: Z-SCORE С ПОДСКАЗКАМИ
+# ============================================================
+
+st.subheader("📉 Z-SCORE С ЗОНАМИ")
+st.caption("🔴 Красная зона = продажа | 🟢 Зелёная зона = покупка | **Наведи курсор — увидишь значение Z-Score**")
+
 fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["z_score"], mode='lines',
-                          name='Z-Score', line=dict(color='#38bdf8', width=2),
-                          fill='tozeroy', fillcolor='rgba(56,189,248,0.15)'))
+
+# Линия Z-Score с подсказками
+fig2.add_trace(go.Scatter(
+    x=df_chart["date"],
+    y=df_chart["z_score"],
+    mode='lines+markers',
+    name='Z-Score',
+    line=dict(color='#38bdf8', width=2),
+    marker=dict(color='#38bdf8', size=2),
+    fill='tozeroy',
+    fillcolor='rgba(56,189,248,0.15)',
+    text=[f"📅 {d.strftime('%Y-%m-%d')}<br>📊 Z-Score: {z:.2f}" 
+          for d, z in zip(df_chart["date"], df_chart["z_score"])],
+    hovertemplate='%{text}<extra></extra>'
+))
+
+# Горизонтальные линии порогов
 fig2.add_hline(y=tier2_threshold, line_dash="dash", line_color="#22c55e",
                annotation_text=f"{tier2_threshold}σ (Tier-2 plateau)")
 fig2.add_hline(y=pre_reg_threshold, line_dash="dash", line_color="#ef4444",
@@ -203,11 +255,20 @@ fig2.add_hline(y=pre_reg_threshold, line_dash="dash", line_color="#ef4444",
 fig2.add_hline(y=0, line_dash="dot", line_color="#6b7280")
 fig2.add_hline(y=euphoria_threshold, line_dash="dash", line_color="#ff6644",
                annotation_text=f"{euphoria_threshold}σ (Euphoria)")
-fig2.update_layout(height=350, template="plotly_dark", yaxis_range=[-3.5, 3.5])
+
+fig2.update_layout(
+    height=350,
+    template="plotly_dark",
+    xaxis_title="Дата",
+    yaxis_title="Z-Score",
+    yaxis_range=[-3.5, 3.5],
+    hovermode="x unified"
+)
+
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# СВОДНАЯ ТАБЛИЦА
+# СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ
 # ============================================================
 
 st.markdown("---")
@@ -244,6 +305,11 @@ progress_bar.empty()
 if all_data:
     st.dataframe(pd.DataFrame(all_data), use_container_width=True, hide_index=True)
 
+# ============================================================
+# ПОДВАЛ
+# ============================================================
+
 st.markdown("---")
-st.caption(f"📅 Обновлено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("⚠️ Не инвестиционная рекомендация")
+st.caption(f"📅 Последнее обновление: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption("📡 Источник: CryptoCompare (криптовалюты), yfinance (акции)")
+st.caption("⚠️ Не является инвестиционной рекомендацией. Все решения принимайте самостоятельно.")
