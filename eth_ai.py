@@ -26,27 +26,24 @@ STOCK_LIST = [
 ]
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ВЫЗОВА DeepSeek API (бесплатно!)
+# ФУНКЦИЯ ДЛЯ ВЫЗОВА DeepSeek API
 # ============================================================
 
 def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text):
     """Отправляет запрос к DeepSeek API и возвращает анализ"""
     
-    # Получаем API ключ из секретов
     deepseek_key = st.secrets.get("DEEPSEEK_API_KEY", "")
     
     if not deepseek_key:
         return "❌ API ключ DeepSeek не найден. Добавь DEEPSEEK_API_KEY в Secrets.\n\nПолучить ключ: platform.deepseek.com"
     
-    # Определяем тип актива
     asset_type = "криптовалюта" if asset_symbol in CRYPTO_LIST else "акция"
     
-    # Формируем промпт для DeepSeek
     prompt = f"""Ты профессиональный финансовый аналитик. Проанализируй {asset_name} ({asset_symbol}, {asset_type}):
 
 ТЕКУЩИЕ ДАННЫЕ:
 - Цена: ${current_price:,.2f}
-- Z-Score: {current_z:.2f} (отклонение от нормы)
+- Z-Score: {current_z:.2f}
 - Вероятность дна: {current_prob*100:.1f}%
 - Сигнал системы: {signal_text}
 
@@ -57,13 +54,12 @@ def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, c
 - -0.5 < Z < 0.5: нейтрально
 
 Напиши КРАТКИЙ анализ (3-5 предложений) на русском:
-1. Что означает текущий сигнал простыми словами
-2. Стоит ли сейчас покупать, продавать или держать
+1. Что означает текущий сигнал
+2. Стоит ли покупать, продавать или держать
 3. Главный фактор риска
 
 Будь конкретен и полезен. Не пиши лишнего. Используй простой русский язык."""
 
-    # Запрос к DeepSeek API
     url = "https://api.deepseek.com/v1/chat/completions"
     
     headers = {
@@ -102,15 +98,12 @@ with st.sidebar:
     st.markdown("---")
     
     st.subheader("📉 ЗОНА ПОКУПКИ (ДНО)")
-    tier2_threshold = st.slider("Tier-2 plateau (зелёная линия)", -2.5, -0.5, -1.8, 0.05,
-                                 help="Z-Score ниже этой линии — начинай присматриваться")
-    pre_reg_threshold = st.slider("Pre-reg locked (красная линия)", -2.5, -0.5, -1.5, 0.05,
-                                   help="Z-Score ниже этой линии — ЭКСТРЕМАЛЬНАЯ ПОКУПКА")
+    tier2_threshold = st.slider("Tier-2 plateau (зелёная линия)", -2.5, -0.5, -1.8, 0.05)
+    pre_reg_threshold = st.slider("Pre-reg locked (красная линия)", -2.5, -0.5, -1.5, 0.05)
     
     st.markdown("---")
     st.subheader("📈 ЗОНА ПРОДАЖИ (ЭЙФОРИЯ)")
-    euphoria_threshold = st.slider("Euphoria zone (красная зона)", 0.5, 2.5, 1.5, 0.05,
-                                    help="Z-Score выше этой линии — ПОРА ПРОДАВАТЬ")
+    euphoria_threshold = st.slider("Euphoria zone", 0.5, 2.5, 1.5, 0.05)
     
     st.markdown("---")
     st.caption("📡 Источник: CryptoCompare (крипто), yfinance (акции)")
@@ -190,9 +183,7 @@ with col1:
 
 with col2:
     st.markdown("---")
-    st.caption("📋 Всего активов: {} криптовалют + {} акций = {} активов".format(
-        len(CRYPTO_LIST), len(STOCK_LIST), len(CRYPTO_LIST) + len(STOCK_LIST)
-    ))
+    st.caption(f"📋 Всего активов: {len(CRYPTO_LIST) + len(STOCK_LIST)}")
 
 # ============================================================
 # ЗАГРУЗКА И ОТОБРАЖЕНИЕ
@@ -235,14 +226,13 @@ st.markdown(f"""
     <h2 style='color: {signal_color}; margin: 0;'>{signal_text}</h2>
     <p style='color: #6b7280; margin-top: 10px;'>
         Z-Score: {current_z:.2f} | 
-        Вероятность: {current_prob*100:.1f}% | 
-        {'📈 ТРЕНД' if abs(current_z) > 1 else '📊 ФЛЭТ'}
+        Вероятность: {current_prob*100:.1f}%
     </p>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# КНОПКА AI-АНАЛИЗА (DeepSeek) — ТЕПЕРЬ ТЕКСТ ЯРКИЙ!
+# КНОПКА AI-АНАЛИЗА (DeepSeek) — ВЕСЬ ТЕКСТ БЕЛЫЙ
 # ============================================================
 
 st.markdown("---")
@@ -256,7 +246,9 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
             signal_text.split("—")[0]
         )
     
-    # ИСПРАВЛЕНО: ТЕКСТ ТЕПЕРЬ БЕЛЫЙ И ХОРОШО ВИДИМЫЙ
+    # Обрабатываем переносы строк для HTML
+    analysis_html = analysis.replace('\n', '<br>').replace('•', '&bull;')
+    
     st.markdown(f"""
     <div style='background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); 
                 padding: 20px; 
@@ -265,9 +257,9 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
                 border: 1px solid #2a2a3e;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
         <h4 style='margin-bottom: 10px; color: #ffffff;'>📈 Анализ от DeepSeek AI</h4>
-        <p style='color: #ffffff; font-size: 15px; line-height: 1.6;'>
-            {analysis}
-        </p>
+        <div style='color: #ffffff; font-size: 15px; line-height: 1.6;'>
+            {analysis_html}
+        </div>
         <p style='color: #888888; font-size: 12px; margin-top: 10px; border-top: 1px solid #2a2a3e; padding-top: 8px;'>
             ⚡ Модель: DeepSeek Chat | Бесплатный API | Анализ на основе текущих данных
         </p>
@@ -275,7 +267,7 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
     """, unsafe_allow_html=True)
 
 # ============================================================
-# ГРАФИК 1: ЦВЕТНАЯ ЛИНИЯ ЦЕНЫ
+# ГРАФИКИ
 # ============================================================
 
 st.markdown("---")
@@ -300,78 +292,44 @@ for i in range(len(df_chart) - 1):
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines',
-        line=dict(color=color, width=2),
-        showlegend=False,
-        hoverinfo='skip'
+        mode='lines', line=dict(color=color, width=2),
+        showlegend=False, hoverinfo='skip'
     ))
 
 fig.add_trace(go.Scatter(
-    x=df_chart["date"],
-    y=df_chart["close"],
-    mode='markers',
-    marker=dict(color='rgba(0,0,0,0)', size=1),
+    x=df_chart["date"], y=df_chart["close"],
+    mode='markers', marker=dict(color='rgba(0,0,0,0)', size=1),
     hoverinfo='text',
     text=[f"📅 <b>{d.strftime('%Y-%m-%d')}</b><br>💰 <b>${p:,.2f}</b><br>📊 Z-Score: <b>{z:.2f}</b>" 
           for d, p, z in zip(df_chart["date"], df_chart["close"], df_chart["z_score"])],
-    name="Информация",
-    hovertemplate='%{text}<extra></extra>'
+    name="Информация", hovertemplate='%{text}<extra></extra>'
 ))
 
-fig.update_layout(
-    height=500,
-    template="plotly_dark",
-    xaxis_title="Дата",
-    yaxis_title="Цена (USD)",
-    yaxis_type="log" if current_price > 100 else "linear",
-    hovermode="x unified"
-)
-
+fig.update_layout(height=500, template="plotly_dark", xaxis_title="Дата",
+                  yaxis_title="Цена (USD)", yaxis_type="log" if current_price > 100 else "linear",
+                  hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
 
-# ============================================================
-# ГРАФИК 2: Z-SCORE
-# ============================================================
-
 st.subheader("📉 Z-SCORE С ЗОНАМИ")
-st.caption("🔴 Красная зона = продажа | 🟢 Зелёная зона = покупка")
-
 fig2 = go.Figure()
-
-fig2.add_trace(go.Scatter(
-    x=df_chart["date"],
-    y=df_chart["z_score"],
-    mode='lines',
-    name='Z-Score',
-    line=dict(color='#38bdf8', width=2),
-    fill='tozeroy',
-    fillcolor='rgba(56,189,248,0.15)',
-    text=[f"📅 {d.strftime('%Y-%m-%d')}<br>📊 Z-Score: {z:.2f}" 
-          for d, z in zip(df_chart["date"], df_chart["z_score"])],
-    hovertemplate='%{text}<extra></extra>'
-))
-
+fig2.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["z_score"],
+                          mode='lines', name='Z-Score', line=dict(color='#38bdf8', width=2),
+                          fill='tozeroy', fillcolor='rgba(56,189,248,0.15)',
+                          text=[f"📅 {d.strftime('%Y-%m-%d')}<br>📊 Z-Score: {z:.2f}" 
+                                for d, z in zip(df_chart["date"], df_chart["z_score"])],
+                          hovertemplate='%{text}<extra></extra>'))
 fig2.add_hline(y=tier2_threshold, line_dash="dash", line_color="#22c55e",
-               annotation_text=f"Tier-2 ({tier2_threshold}σ)", annotation_position="right")
+               annotation_text=f"Tier-2 ({tier2_threshold}σ)")
 fig2.add_hline(y=pre_reg_threshold, line_dash="dash", line_color="#ef4444",
-               annotation_text=f"Pre-reg ({pre_reg_threshold}σ)", annotation_position="right")
+               annotation_text=f"Pre-reg ({pre_reg_threshold}σ)")
 fig2.add_hline(y=0, line_dash="dot", line_color="#6b7280")
 fig2.add_hline(y=euphoria_threshold, line_dash="dash", line_color="#ff6644",
-               annotation_text=f"Euphoria ({euphoria_threshold}σ)", annotation_position="right")
-
-fig2.update_layout(
-    height=350,
-    template="plotly_dark",
-    xaxis_title="Дата",
-    yaxis_title="Z-Score",
-    yaxis_range=[-3.5, 3.5],
-    hovermode="x unified"
-)
-
+               annotation_text=f"Euphoria ({euphoria_threshold}σ)")
+fig2.update_layout(height=350, template="plotly_dark", yaxis_range=[-3.5, 3.5])
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ
+# СВОДНАЯ ТАБЛИЦА
 # ============================================================
 
 st.markdown("---")
@@ -408,11 +366,7 @@ progress_bar.empty()
 if all_data:
     st.dataframe(pd.DataFrame(all_data), use_container_width=True, hide_index=True)
 
-# ============================================================
-# ПОДВАЛ
-# ============================================================
-
 st.markdown("---")
-st.caption(f"📅 Последнее обновление: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("📡 Источник: CryptoCompare (криптовалюты), yfinance (акции)")
-st.caption("🤖 AI-анализ от DeepSeek (бесплатно) | ⚠️ Не является инвестиционной рекомендацией")
+st.caption(f"📅 Обновлено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption("📡 Источник: CryptoCompare, yfinance")
+st.caption("🤖 AI-анализ от DeepSeek (бесплатно) | ⚠️ Не инвестиционная рекомендация")
