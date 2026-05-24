@@ -12,11 +12,12 @@ st.title("📊 Мульти-актив Детектор Дна")
 st.markdown("### 🚀 Определение глобальных минимумов для криптовалют и акций")
 
 # ============================================================
-# СПИСОК АКТИВОВ
+# СПИСОК АКТИВОВ (ВКЛЮЧАЯ ТВОИ)
 # ============================================================
 
-# 30 криптовалют
+# Криптовалюты (включая KZ, NEAR и другие)
 CRYPTO_SYMBOLS = {
+    # Основные
     "ETH": "Ethereum",
     "BTC": "Bitcoin",
     "SOL": "Solana",
@@ -30,13 +31,11 @@ CRYPTO_SYMBOLS = {
     "LINK": "Chainlink",
     "UNI": "Uniswap",
     "ATOM": "Cosmos",
-    "ETC": "Ethereum Classic",
     "LTC": "Litecoin",
     "FIL": "Filecoin",
     "APT": "Aptos",
     "ARB": "Arbitrum",
     "OP": "Optimism",
-    "NEAR": "NEAR Protocol",
     "AAVE": "Aave",
     "MKR": "Maker",
     "CRV": "Curve",
@@ -46,25 +45,62 @@ CRYPTO_SYMBOLS = {
     "SAND": "The Sandbox",
     "MANA": "Decentraland",
     "AXS": "Axie Infinity",
-    "GALA": "Gala"
+    "GALA": "Gala",
+    # Твои криптовалюты
+    "KZ": "Kazakhstan Coin",
+    "NEAR": "NEAR Protocol",
+    "TON": "Toncoin",
+    "ALGO": "Algorand",
+    "FLOCK": "Flock.io"
 }
 
-# 10 акций
+# 20 акций (включая твои)
 STOCK_SYMBOLS = {
+    # Твои акции
+    "HIMS": "Hims & Hers Health",
+    "SIL": "Global X Silver Miners ETF",
+    "GDX": "VanEck Gold Miners ETF",
+    "TSLA": "Tesla Inc.",
+    "LIT": "Global X Lithium & Battery Tech ETF",
+    "ZM": "Zoom Video Communications",
+    "URA": "Global X Uranium ETF",
+    "PLTR": "Palantir Technologies",
+    "EWW": "iShares MSCI Mexico ETF",
+    "BABA": "Alibaba Group",
+    "COIN": "Coinbase Global",
+    "NVDA": "NVIDIA Corporation",
+    "SBER": "Sberbank",
+    "MTSS": "MTS (Mobile TeleSystems)",
+    "HEAD": "HeadHunter Group",
+    # Дополнительные популярные
     "AAPL": "Apple Inc.",
-    "MSFT": "Microsoft",
+    "MSFT": "Microsoft Corporation",
     "GOOGL": "Alphabet (Google)",
-    "AMZN": "Amazon",
-    "NVDA": "NVIDIA",
-    "TSLA": "Tesla",
-    "META": "Meta (Facebook)",
-    "NFLX": "Netflix",
-    "AMD": "Advanced Micro Devices",
-    "INTC": "Intel"
+    "AMZN": "Amazon.com",
+    "META": "Meta Platforms"
 }
 
 # Объединяем все активы
 ALL_ASSETS = {**CRYPTO_SYMBOLS, **STOCK_SYMBOLS}
+
+# Специальные символы для некоторых акций (настройка тикеров для Yahoo Finance)
+YAHOO_TICKERS = {
+    "SBER": "SBER.ME",      # Московская биржа
+    "MTSS": "MTSS.ME",      # Московская биржа
+    "HEAD": "HHRU.ME",      # Московская биржа
+    "HIMS": "HIMS",         # NYSE
+    "SIL": "SIL",           # NYSE
+    "GDX": "GDX",           # NYSE
+    "TSLA": "TSLA",         # NASDAQ
+    "LIT": "LIT",           # NYSE
+    "ZM": "ZM",             # NASDAQ
+    "URA": "URA",           # NYSE
+    "PLTR": "PLTR",         # NYSE
+    "EWW": "EWW",           # NYSE
+    "BABA": "BABA",         # NYSE
+    "COIN": "COIN",         # NASDAQ
+    "NVDA": "NVDA",         # NASDAQ
+}
 
 # ============================================================
 # ЗАГРУЗКА ДАННЫХ ДЛЯ КРИПТОВАЛЮТ
@@ -105,40 +141,43 @@ def load_crypto_data(symbol, vs_currency="usd", days=500):
     return None
 
 # ============================================================
-# ЗАГРУЗКА ДАННЫХ ДЛЯ АКЦИЙ (Alpha Vantage API)
+# ЗАГРУЗКА ДАННЫХ ДЛЯ АКЦИЙ (Yahoo Finance через yfinance)
 # ============================================================
 
-@st.cache_data(ttl=300)  # 5 минут
+@st.cache_data(ttl=300)
 def load_stock_data(symbol):
-    """Загружает данные акций с Alpha Vantage API"""
+    """Загружает данные акций через Yahoo Finance"""
     
     try:
-        # Alpha Vantage API (бесплатно, 5 запросов/мин)
-        API_KEY = st.secrets.get("ALPHA_VANTAGE_KEY", "demo")
+        # Определяем правильный тикер
+        ticker = YAHOO_TICKERS.get(symbol, symbol)
         
-        url = "https://www.alphavantage.co/query"
+        # Создаём URL для Yahoo Finance CSV
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=700)
+        
+        url = f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}"
         params = {
-            "function": "TIME_SERIES_DAILY",
-            "symbol": symbol,
-            "apikey": API_KEY,
-            "outputsize": "compact"
+            "period1": int(start_date.timestamp()),
+            "period2": int(end_date.timestamp()),
+            "interval": "1d",
+            "events": "history"
         }
         
-        response = requests.get(url, params=params, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=15)
         
         if response.status_code == 200:
-            data = response.json()
+            from io import StringIO
+            df = pd.read_csv(StringIO(response.text))
+            df["date"] = pd.to_datetime(df["Date"])
+            df["close"] = df["Close"].astype(float)
+            df = df.sort_values("date").reset_index(drop=True)
             
-            if "Time Series (Daily)" in data:
-                ts_data = data["Time Series (Daily)"]
-                df = pd.DataFrame.from_dict(ts_data, orient="index")
-                df = df.reset_index()
-                df.columns = ["date", "open", "high", "low", "close", "volume"]
-                df["date"] = pd.to_datetime(df["date"])
-                df["close"] = df["close"].astype(float)
-                df = df.sort_values("date").reset_index(drop=True)
-                
-                return df.tail(500)
+            return df.tail(500)
     except:
         pass
     
@@ -154,6 +193,7 @@ def calculate_metrics(df):
     if df is None or len(df) < 50:
         return None, None, None
     
+    df = df.copy()
     df["returns"] = df["close"].pct_change()
     df["z_score"] = (df["returns"] - df["returns"].rolling(30).mean()) / (df["returns"].rolling(30).std() + 1e-10)
     df = df.fillna(0)
@@ -162,7 +202,7 @@ def calculate_metrics(df):
     current_z = df["z_score"].iloc[-1]
     current_prob = 1 / (1 + np.exp(current_z * 1.5))
     
-    return current_price, current_z, current_prob
+    return df, current_price, current_z, current_prob
 
 # ============================================================
 # ЦВЕТНАЯ КАРТА ДЛЯ СИГНАЛОВ
@@ -188,14 +228,37 @@ with st.sidebar:
     # Выбор типа активов
     asset_type = st.radio(
         "Тип активов",
-        ["Криптовалюты", "Акции", "Все активы"]
+        ["Криптовалюты", "Акции", "Все активы", "Мои активы"]
     )
     
-    # Выбор конкретного актива
+    # Мои активы (сокращённый список)
+    MY_ASSETS = {
+        "KZ": "Kazakhstan Coin",
+        "NEAR": "NEAR Protocol",
+        "HIMS": "Hims & Hers Health",
+        "SIL": "Global X Silver Miners ETF",
+        "GDX": "VanEck Gold Miners ETF",
+        "TSLA": "Tesla Inc.",
+        "LIT": "Global X Lithium ETF",
+        "ZM": "Zoom Video",
+        "URA": "Global X Uranium ETF",
+        "PLTR": "Palantir",
+        "EWW": "iShares MSCI Mexico",
+        "BABA": "Alibaba",
+        "COIN": "Coinbase",
+        "NVDA": "NVIDIA",
+        "SBER": "Sberbank",
+        "MTSS": "MTS",
+        "HEAD": "HeadHunter"
+    }
+    
+    # Выбор списка
     if asset_type == "Криптовалюты":
         asset_list = CRYPTO_SYMBOLS
     elif asset_type == "Акции":
         asset_list = STOCK_SYMBOLS
+    elif asset_type == "Мои активы":
+        asset_list = MY_ASSETS
     else:
         asset_list = ALL_ASSETS
     
@@ -208,7 +271,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("📡 Источники данных:")
     st.caption("• CryptoCompare (криптовалюты)")
-    st.caption("• Alpha Vantage (акции)")
+    st.caption("• Yahoo Finance (акции)")
     st.caption("🕐 Обновление: каждые 5 минут")
     st.caption("⚠️ Не инвестиционная рекомендация")
 
@@ -230,7 +293,6 @@ else:
 if df is None:
     st.warning(f"⚠️ Не удалось загрузить данные для {selected_asset}. Использую демо-данные.")
     
-    # Генерация демо-данных
     end_date = datetime.now()
     start_date = end_date - timedelta(days=500)
     dates = []
@@ -247,7 +309,7 @@ if df is None:
     df = pd.DataFrame({"date": dates, "close": prices})
 
 # Расчёт метрик
-current_price, current_z, current_prob = calculate_metrics(df)
+df, current_price, current_z, current_prob = calculate_metrics(df)
 signal_icon, signal_color, signal_text = get_signal_color(current_prob)
 
 # ============================================================
@@ -325,7 +387,7 @@ fig.update_layout(
     template="plotly_dark",
     xaxis_title="Дата",
     yaxis_title="Цена (USD)",
-    yaxis_type="log" if is_crypto else "linear",
+    yaxis_type="log" if is_crypto and current_price > 1 else "linear",
     hovermode="x unified"
 )
 
@@ -375,13 +437,22 @@ st.plotly_chart(fig2, use_container_width=True)
 st.markdown("---")
 st.subheader("📋 СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ")
 
-# Собираем данные для всех активов
-all_data = []
+# Определяем, какие активы показывать
+if asset_type == "Мои активы":
+    display_assets = MY_ASSETS
+elif asset_type == "Криптовалюты":
+    display_assets = CRYPTO_SYMBOLS
+elif asset_type == "Акции":
+    display_assets = STOCK_SYMBOLS
+else:
+    display_assets = MY_ASSETS  # по умолчанию показываем "Мои активы"
 
+# Собираем данные
+all_data = []
 progress_bar = st.progress(0)
 status_text = st.empty()
 
-for i, (symbol, name) in enumerate(ALL_ASSETS.items()):
+for i, (symbol, name) in enumerate(display_assets.items()):
     status_text.text(f"Загрузка {symbol}...")
     
     if symbol in CRYPTO_SYMBOLS:
@@ -390,7 +461,7 @@ for i, (symbol, name) in enumerate(ALL_ASSETS.items()):
         df_temp = load_stock_data(symbol)
     
     if df_temp is not None:
-        price, z, prob = calculate_metrics(df_temp)
+        _, price, z, prob = calculate_metrics(df_temp)
         _, _, signal = get_signal_color(prob)
         
         all_data.append({
@@ -402,7 +473,7 @@ for i, (symbol, name) in enumerate(ALL_ASSETS.items()):
             "Сигнал": signal
         })
     
-    progress_bar.progress((i + 1) / len(ALL_ASSETS))
+    progress_bar.progress((i + 1) / len(display_assets))
 
 status_text.empty()
 progress_bar.empty()
@@ -453,5 +524,5 @@ with col3:
 
 st.markdown("---")
 st.caption(f"📅 Последнее обновление: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("📡 Источники: CryptoCompare (криптовалюты), Alpha Vantage (акции)")
+st.caption("📡 Источники: CryptoCompare (криптовалюты), Yahoo Finance (акции)")
 st.caption("⚠️ Не является инвестиционной рекомендацией. Все решения принимайте самостоятельно.")
