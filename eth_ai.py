@@ -22,10 +22,10 @@ def load_data():
     try:
         # Проверяем, настроен ли ключ в секретах Streamlit
         if "CRYPTOCOMPARE_KEY" in st.secrets:
-    st.write("✅ Ключ НАЙДЕН в Secrets")
-else:
-    st.write("❌ Ключ НЕ НАЙДЕН в Secrets")
-    st.write("Доступные ключи:", list(st.secrets.keys()))
+        st.write("✅ Ключ НАЙДЕН в Secrets")
+    else:
+        st.write("❌ Ключ НЕ НАЙДЕН в Secrets")
+        st.write("Доступные ключи:", list(st.secrets.keys()))
             
             url = "https://min-api.cryptocompare.com/data/v2/histoday"
             params = {
