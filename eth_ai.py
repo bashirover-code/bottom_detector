@@ -7,8 +7,24 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="ETH Детектор Дна", layout="wide")
 
+# ============================================================
+# ТЕСТ: проверяем, видит ли Streamlit ключ
+# ============================================================
+
+try:
+    if "CRYPTOCOMPARE_KEY" in st.secrets:
+        st.success("✅ Ключ НАЙДЕН в Secrets")
+        st.write(f"Имя ключа: CRYPTOCOMPARE_KEY")
+    else:
+        st.error("❌ Ключ НЕ НАЙДЕН в Secrets")
+        st.write("Доступные ключи:", list(st.secrets.keys()))
+except Exception as e:
+    st.error(f"Ошибка при доступе к Secrets: {e}")
+
 st.title("📊 ETH Детектор Дна")
 st.markdown("### 🚀 Определение глобальных минимумов Ethereum")
+
+# ... дальше продолжается твой код ...
 
 # ============================================================
 # МНОГОУРОВНЕВАЯ ЗАГРУЗКА ДАННЫХ
@@ -22,10 +38,7 @@ def load_data():
     try:
         # Проверяем, настроен ли ключ в секретах Streamlit
         if "CRYPTOCOMPARE_KEY" in st.secrets:
-        st.write("✅ Ключ НАЙДЕН в Secrets")
-    else:
-        st.write("❌ Ключ НЕ НАЙДЕН в Secrets")
-        st.write("Доступные ключи:", list(st.secrets.keys()))
+            API_KEY = st.secrets["CRYPTOCOMPARE_KEY"]
             
             url = "https://min-api.cryptocompare.com/data/v2/histoday"
             params = {
