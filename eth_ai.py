@@ -26,7 +26,7 @@ STOCK_LIST = [
 ]
 
 # ============================================================
-# ФУНКЦИЯ ДЛЯ ВЫЗОВА CLAUDE API (ИСПРАВЛЕНА)
+# ФУНКЦИЯ ДЛЯ ВЫЗОВА CLAUDE API (Claude 3.5 Sonnet)
 # ============================================================
 
 def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text):
@@ -73,7 +73,7 @@ def call_claude_analysis(asset_name, asset_symbol, current_price, current_z, cur
     }
     
     data = {
-        "model": "claude-3-5-haiku-20241022",  # ← ИСПРАВЛЕНО: актуальная модель
+        "model": "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet (самая умная)
         "max_tokens": 500,
         "messages": [{"role": "user", "content": prompt}]
     }
@@ -112,6 +112,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("📡 Источник: CryptoCompare (крипто), yfinance (акции)")
     st.caption("🕐 Обновление: каждые 5 минут")
+    st.caption("🤖 Модель: Claude 3.5 Sonnet")
 
 # ============================================================
 # ЗАГРУЗКА ДАННЫХ
@@ -245,7 +246,7 @@ st.markdown("---")
 st.subheader("🤖 AI-анализ актива")
 
 if st.button(f"📊 Получить AI-анализ для {selected_asset}", type="primary"):
-    with st.spinner(f"🧠 Claude анализирует {selected_asset}..."):
+    with st.spinner(f"🧠 Claude 3.5 Sonnet анализирует {selected_asset}..."):
         analysis = call_claude_analysis(
             asset_name, selected_asset, 
             current_price, current_z, current_prob, 
@@ -256,7 +257,7 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
     <div style='background: #1a1a2e; padding: 20px; border-radius: 16px; margin: 10px 0;'>
         <h4 style='margin-bottom: 10px;'>📈 Анализ от Claude AI</h4>
         <p style='color: #e2e8f0;'>{analysis}</p>
-        <p style='color: #6b7280; font-size: 12px; margin-top: 10px;'>⚡ Модель: Claude 3.5 Haiku | Анализ на основе текущих данных</p>
+        <p style='color: #6b7280; font-size: 12px; margin-top: 10px;'>⚡ Модель: Claude 3.5 Sonnet | Анализ на основе текущих данных</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -401,4 +402,4 @@ if all_data:
 st.markdown("---")
 st.caption(f"📅 Последнее обновление: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.caption("📡 Источник: CryptoCompare (криптовалюты), yfinance (акции)")
-st.caption("🤖 AI-анализ от Claude 3.5 Haiku | ⚠️ Не является инвестиционной рекомендацией")
+st.caption("🤖 AI-анализ от Claude 3.5 Sonnet | ⚠️ Не является инвестиционной рекомендацией")
