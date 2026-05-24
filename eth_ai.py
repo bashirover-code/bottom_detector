@@ -242,7 +242,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# КНОПКА AI-АНАЛИЗА (DeepSeek)
+# КНОПКА AI-АНАЛИЗА (DeepSeek) — ТЕПЕРЬ ТЕКСТ ЯРКИЙ!
 # ============================================================
 
 st.markdown("---")
@@ -256,11 +256,21 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
             signal_text.split("—")[0]
         )
     
+    # ИСПРАВЛЕНО: ТЕКСТ ТЕПЕРЬ БЕЛЫЙ И ХОРОШО ВИДИМЫЙ
     st.markdown(f"""
-    <div style='background: #1a1a2e; padding: 20px; border-radius: 16px; margin: 10px 0;'>
-        <h4 style='margin-bottom: 10px;'>📈 Анализ от DeepSeek AI</h4>
-        <p style='color: #e2e8f0;'>{analysis}</p>
-        <p style='color: #6b7280; font-size: 12px; margin-top: 10px;'>⚡ Модель: DeepSeek Chat | Бесплатный API | Анализ на основе текущих данных</p>
+    <div style='background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); 
+                padding: 20px; 
+                border-radius: 16px; 
+                margin: 10px 0;
+                border: 1px solid #2a2a3e;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
+        <h4 style='margin-bottom: 10px; color: #ffffff;'>📈 Анализ от DeepSeek AI</h4>
+        <p style='color: #ffffff; font-size: 15px; line-height: 1.6;'>
+            {analysis}
+        </p>
+        <p style='color: #888888; font-size: 12px; margin-top: 10px; border-top: 1px solid #2a2a3e; padding-top: 8px;'>
+            ⚡ Модель: DeepSeek Chat | Бесплатный API | Анализ на основе текущих данных
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
