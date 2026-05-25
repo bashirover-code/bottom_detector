@@ -7,16 +7,16 @@ import plotly.graph_objects as go
 import yfinance as yf
 
 # ============================================================
-# НАСТРОЙКИ СТРАНИЦЫ — МИНИМАЛИЗМ И СТРОГОСТЬ
+# НАСТРОЙКИ СТРАНИЦЫ
 # ============================================================
 
 st.set_page_config(
-    page_title="MULTI-ASSET BOTTOM DETECTOR",
+    page_title="ДЕТЕКТОР ДНА — MULTI-ASSET",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Убираем дефолтный sidebar и лишние элементы
+# Полностью скрываем левую панель и лишние элементы
 st.markdown("""
     <style>
         [data-testid="collapsedControl"] { display: none; }
@@ -24,31 +24,33 @@ st.markdown("""
         header { display: none; }
         footer { display: none; }
         .stApp { background-color: #0a0a0a; }
-        .stTabs [data-baseweb="tab-list"] { gap: 2px; background-color: #1a1a1a; padding: 5px; border-radius: 8px; }
-        .stTabs [data-baseweb="tab"] { border-radius: 6px; padding: 8px 16px; background-color: #1a1a1a; color: #888; }
-        .stTabs [aria-selected="true"] { background-color: #00ff44; color: #000; font-weight: bold; }
-        div[data-testid="stMetricValue"] { font-size: 1.8rem !important; font-weight: 600 !important; }
-        div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; text-transform: uppercase; letter-spacing: 1px; color: #666; }
-        .stDataFrame { border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden; }
-        .stButton button { background: linear-gradient(135deg, #00ff44 0%, #00cc33 100%); color: #000; font-weight: bold; border: none; padding: 8px 24px; border-radius: 6px; }
-        .stButton button:hover { background: linear-gradient(135deg, #00ff44 0%, #00aa22 100%); color: #000; }
+        .stSelectbox > div { background-color: #1a1a1a; border: 1px solid #333; border-radius: 8px; }
+        .stRadio > div { gap: 8px; }
+        .stRadio label { background-color: #1a1a1a; padding: 4px 16px; border-radius: 20px; color: #ccc; }
+        .stRadio [data-baseweb="radio"]:checked + label { background-color: #00ff44; color: #000; font-weight: bold; }
+        div[data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 700 !important; }
+        div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; letter-spacing: 1px; color: #aaa; }
+        .stButton button { background: #00ff44; color: #000; font-weight: bold; border: none; padding: 8px 24px; border-radius: 6px; }
+        .stButton button:hover { background: #00cc33; color: #000; }
         h1, h2, h3, h4, h5, h6, p, span, div { font-family: 'Times New Roman', Times, serif !important; }
-        .metric-card { background-color: #1a1a1a; border-radius: 12px; padding: 16px; border-left: 3px solid; margin: 8px 0; }
-        .signal-card { background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%); border-radius: 16px; padding: 32px; text-align: center; margin: 24px 0; border: 1px solid #2a2a3e; }
-        .section-title { font-size: 1rem; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #666; margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 8px; }
+        .metric-card { background-color: #111; border-radius: 12px; padding: 16px; border-left: 3px solid; margin: 8px 0; }
+        .signal-card { background: linear-gradient(135deg, #0f0f1a 0%, #0a0a0f 100%); border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #2a2a3e; }
+        .section-title { font-size: 0.9rem; font-weight: 600; letter-spacing: 2px; color: #00ff44; margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 8px; text-transform: uppercase; }
+        hr { border-color: #2a2a2a; margin: 16px 0; }
     </style>
     <meta http-equiv="refresh" content="300">
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ЗАГОЛОВОК — ТОЛЬКО НАЗВАНИЕ
+# ЗАГОЛОВОК
 # ============================================================
 
-st.title("MULTI-ASSET BOTTOM DETECTOR")
-st.markdown("<p style='color: #666; font-size: 0.8rem; letter-spacing: 1px;'>PROFESSIONAL EDITION</p>", unsafe_allow_html=True)
+st.title("⚡ ДЕТЕКТОР ДНА")
+st.markdown("<p style='color: #00ff44; font-size: 0.8rem; letter-spacing: 2px;'>ПРОФЕССИОНАЛЬНАЯ СИСТЕМА АНАЛИЗА РЫНКА</p>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================
-# 1. ФИНАЛЬНЫЙ СПИСОК АКТИВОВ
+# 1. СПИСКИ АКТИВОВ
 # ============================================================
 
 CRYPTO_LIST = [
@@ -75,15 +77,14 @@ COINGECKO_IDS = {
 }
 
 # ============================================================
-# 2. ФУНКЦИИ
+# 2. ЯДРО СИСТЕМЫ
 # ============================================================
 
 @st.cache_data(ttl=600)
 def get_coingecko_fundamentals(coin_id):
     try:
         api_key = st.secrets.get("COINGECKO_API_KEY")
-        if not api_key:
-            return None
+        if not api_key: return None
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
         params = {"localization": "false", "market_data": "true", "x_cg_demo_api_key": api_key}
         response = requests.get(url, params=params, timeout=15)
@@ -98,46 +99,44 @@ def get_coingecko_fundamentals(coin_id):
                 "price_change_24h": md.get("price_change_percentage_24h", 0)
             }
     except:
-        pass
-    return None
+        return None
 
 def get_adaptive_thresholds(z_scores):
-    if len(z_scores) < 30:
-        return -1.8, 1.5
+    if len(z_scores) < 30: return -1.8, 1.5
     lower = max(-3.0, min(-1.0, np.percentile(z_scores, 5)))
     upper = min(3.0, max(0.5, np.percentile(z_scores, 95)))
     return lower, upper
 
-def get_signal_adaptive(z_score, lower_thr, upper_thr, is_veteran):
+def get_signal(z_score, lower_thr, upper_thr, is_veteran):
     if is_veteran:
-        if z_score <= -1.8: return "STRONG BUY", "#00ff44"
-        elif z_score <= -1.2: return "ACCUMULATE", "#88ff88"
-        elif z_score >= 1.5: return "SELL", "#ff2200"
-        else: return "HOLD", "#666666"
+        if z_score <= -1.8: return "ЭКСТРЕМАЛЬНАЯ ПОКУПКА", "#00ff44"
+        elif z_score <= -1.2: return "НАКОПЛЕНИЕ", "#88ff88"
+        elif z_score >= 1.5: return "ПРОДАЖА", "#ff2200"
+        else: return "НЕЙТРАЛЬНО", "#ffaa44"
     else:
-        if z_score <= lower_thr: return "STRONG BUY", "#00ff44"
-        elif z_score <= lower_thr * 0.7: return "ACCUMULATE", "#88ff88"
-        elif z_score >= upper_thr: return "SELL", "#ff2200"
-        else: return "HOLD", "#666666"
+        if z_score <= lower_thr: return "ЭКСТРЕМАЛЬНАЯ ПОКУПКА", "#00ff44"
+        elif z_score <= lower_thr * 0.7: return "НАКОПЛЕНИЕ", "#88ff88"
+        elif z_score >= upper_thr: return "ПРОДАЖА", "#ff2200"
+        else: return "НЕЙТРАЛЬНО", "#ffaa44"
 
 @st.cache_data(ttl=600)
 def load_crypto_data(symbol, days=500):
     try:
-        if "CRYPTOCOMPARE_KEY" in st.secrets:
-            api_key = st.secrets["CRYPTOCOMPARE_KEY"]
-            url = "https://min-api.cryptocompare.com/data/v2/histoday"
-            params = {"fsym": symbol, "tsym": "USD", "limit": days, "api_key": api_key}
-            response = requests.get(url, params=params, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("Response") == "Success":
-                    raw = data["Data"]["Data"]
-                    df = pd.DataFrame(raw)
-                    df["date"] = pd.to_datetime(df["time"], unit='s')
-                    df["close"] = df["close"].astype(float)
-                    return df.sort_values("date").reset_index(drop=True)
+        api_key = st.secrets.get("CRYPTOCOMPARE_KEY")
+        if not api_key: return None
+        url = "https://min-api.cryptocompare.com/data/v2/histoday"
+        params = {"fsym": symbol, "tsym": "USD", "limit": days, "api_key": api_key}
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("Response") == "Success":
+                raw = data["Data"]["Data"]
+                df = pd.DataFrame(raw)
+                df["date"] = pd.to_datetime(df["time"], unit='s')
+                df["close"] = df["close"].astype(float)
+                return df.sort_values("date").reset_index(drop=True)
     except:
-        pass
+        return None
     return None
 
 @st.cache_data(ttl=600)
@@ -152,12 +151,11 @@ def load_stock_data(symbol, days=500):
             df = df.rename(columns={"Date": "date", "Close": "close"})
             return df[["date", "close"]]
     except:
-        pass
+        return None
     return None
 
-def calculate_metrics_adaptive(df):
-    if df is None or len(df) < 30:
-        return None, None, None, None, None, None
+def calculate_metrics(df):
+    if df is None or len(df) < 30: return None, None, None, None, None, None
     df = df.copy()
     df["returns"] = df["close"].pct_change()
     mean_ret = df["returns"].mean()
@@ -166,28 +164,27 @@ def calculate_metrics_adaptive(df):
     df = df.fillna(0)
     z_scores = df["z_score"].values
     lower, upper = get_adaptive_thresholds(z_scores)
-    current_price = df["close"].iloc[-1]
-    current_z = df["z_score"].iloc[-1]
+    price = df["close"].iloc[-1]
+    z = df["z_score"].iloc[-1]
     sensitivity = 1.5 if len(df) > 365 else 1.0
-    current_prob = 1 / (1 + np.exp(current_z * sensitivity))
+    prob = 1 / (1 + np.exp(z * sensitivity))
     confidence = min(100, len(df) / 365 * 100)
-    return df, current_price, current_z, current_prob, confidence, (lower, upper)
+    return df, price, z, prob, confidence, (lower, upper)
 
 # ============================================================
-# 3. ИНТЕРФЕЙС — ТОЛЬКО ВЕРХНЯЯ СТРОКА
+# 3. ИНТЕРФЕЙС ВЫБОРА АКТИВА
 # ============================================================
 
-col_selector, col_placeholder = st.columns([1, 3])
-
-with col_selector:
-    asset_type = st.radio("", ["CRYPTO", "STOCKS"], horizontal=True, label_visibility="collapsed")
-    if asset_type == "CRYPTO":
+col_type, col_asset, _ = st.columns([1, 2, 4])
+with col_type:
+    asset_type = st.radio("ТИП", ["КРИПТО", "АКЦИИ"], horizontal=True, label_visibility="collapsed")
+with col_asset:
+    if asset_type == "КРИПТО":
         selected_asset = st.selectbox("", CRYPTO_LIST, label_visibility="collapsed")
     else:
         selected_asset = st.selectbox("", STOCK_LIST, label_visibility="collapsed")
 
-with col_placeholder:
-    st.markdown("---")
+st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================
 # 4. ЗАГРУЗКА ДАННЫХ
@@ -196,150 +193,141 @@ with col_placeholder:
 is_crypto = selected_asset in CRYPTO_LIST
 is_veteran = selected_asset in VETERAN_LIST
 
-fundamentals = None
 if is_crypto and selected_asset in COINGECKO_IDS:
-    coin_id = COINGECKO_IDS[selected_asset]
-    fundamentals = get_coingecko_fundamentals(coin_id)
+    fundamentals = get_coingecko_fundamentals(COINGECKO_IDS[selected_asset])
+else:
+    fundamentals = None
 
-with st.spinner("LOADING DATA..."):
+with st.spinner("ЗАГРУЗКА ДАННЫХ..."):
     if is_crypto:
         df = load_crypto_data(selected_asset)
     else:
         df = load_stock_data(selected_asset)
 
 if df is None or len(df) < 30:
-    st.warning("INSUFFICIENT DATA")
+    st.error("НЕДОСТАТОЧНО ДАННЫХ ДЛЯ АНАЛИЗА")
     st.stop()
 
-df, price, z_score, prob, confidence, (lower, upper) = calculate_metrics_adaptive(df)
-signal_text, signal_color = get_signal_adaptive(z_score, lower, upper, is_veteran)
+df, price, z, prob, confidence, (lower, upper) = calculate_metrics(df)
+signal_text, signal_color = get_signal(z, lower, upper, is_veteran)
 
 # ============================================================
-# 5. ОСНОВНЫЕ МЕТРИКИ — МИНИМАЛЬНО
+# 5. МЕТРИКИ
 # ============================================================
 
-col1, col2, col3, col4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
-with col1:
-    st.markdown(f"""
-    <div class='metric-card' style='border-left-color: #3b82f6;'>
-        <div style='color: #666; font-size: 0.7rem; letter-spacing: 1px;'>PRICE</div>
-        <div style='font-size: 1.8rem; font-weight: 600; color: #fff;'>${price:,.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+with c1:
+    st.metric("💰 ЦЕНА", f"${price:,.2f}")
 
-with col2:
-    st.markdown(f"""
-    <div class='metric-card' style='border-left-color: #38bdf8;'>
-        <div style='color: #666; font-size: 0.7rem; letter-spacing: 1px;'>Z-SCORE</div>
-        <div style='font-size: 1.8rem; font-weight: 600; color: #38bdf8;'>{z_score:+.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+with c2:
+    st.metric("📊 Z-SCORE", f"{z:+.2f}")
 
-with col3:
-    prob_color = "#00ff44" if prob > 0.6 else "#eab308" if prob > 0.4 else "#ef4444"
+with c3:
+    prob_color = "#00ff44" if prob > 0.6 else "#ffaa44" if prob > 0.4 else "#ff2200"
     st.markdown(f"""
     <div class='metric-card' style='border-left-color: {prob_color};'>
-        <div style='color: #666; font-size: 0.7rem; letter-spacing: 1px;'>BOTTOM PROB.</div>
-        <div style='font-size: 1.8rem; font-weight: 600; color: {prob_color};'>{prob*100:.1f}%</div>
+        <div style='color: #aaa; font-size: 0.7rem;'>ВЕРОЯТНОСТЬ ДНА</div>
+        <div style='font-size: 2rem; font-weight: 700; color: {prob_color};'>{prob*100:.1f}%</div>
     </div>
     """, unsafe_allow_html=True)
 
-with col4:
+with c4:
     st.markdown(f"""
     <div class='metric-card' style='border-left-color: {signal_color};'>
-        <div style='color: #666; font-size: 0.7rem; letter-spacing: 1px;'>SIGNAL</div>
-        <div style='font-size: 1.8rem; font-weight: 600; color: {signal_color};'>{signal_text}</div>
+        <div style='color: #aaa; font-size: 0.7rem;'>СИГНАЛ</div>
+        <div style='font-size: 1.5rem; font-weight: 700; color: {signal_color};'>{signal_text}</div>
     </div>
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 6. СИГНАЛ КАРТА
+# 6. ГРАФИК ЦЕНЫ — ЖИРНЫЕ ЦВЕТНЫЕ ПОЛОСЫ + ЧЁРНАЯ ЛИНИЯ
 # ============================================================
 
-st.markdown(f"""
-<div class='signal-card' style='border: 1px solid {signal_color}40;'>
-    <div style='color: {signal_color}; font-size: 2.5rem; font-weight: 700; letter-spacing: 4px;'>{signal_text}</div>
-    <div style='color: #666; font-size: 0.7rem; margin-top: 12px;'>ADAPTIVE Z-SCORE • {lower:.2f} / {upper:.2f} THRESHOLDS</div>
-</div>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# 7. ГРАФИК ЦЕНЫ — ЖИРНЫЕ ЦВЕТНЫЕ ПОЛОСЫ + ЧЁРНАЯ ЛИНИЯ
-# ============================================================
-
-st.markdown("<div class='section-title'>PRICE CHART</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>📈 ГРАФИК ЦЕНЫ</div>", unsafe_allow_html=True)
 
 df_chart = df.tail(500).copy()
 
-def get_color(z, lower, upper):
-    if z <= lower: return "rgba(0, 255, 68, 0.4)"
-    elif z <= lower * 0.7: return "rgba(68, 255, 68, 0.35)"
+def get_area_color(z, lower, upper):
+    if z <= lower: return "rgba(0, 255, 68, 0.5)"
+    elif z <= lower * 0.7: return "rgba(68, 255, 68, 0.4)"
     elif z <= -0.5: return "rgba(136, 255, 136, 0.3)"
     elif z <= 0.5: return "rgba(136, 136, 136, 0.2)"
-    elif z <= 1.2: return "rgba(255, 170, 102, 0.35)"
-    elif z <= upper: return "rgba(255, 102, 68, 0.4)"
-    else: return "rgba(255, 34, 0, 0.5)"
+    elif z <= 1.2: return "rgba(255, 170, 102, 0.4)"
+    elif z <= upper: return "rgba(255, 102, 68, 0.5)"
+    else: return "rgba(255, 34, 0, 0.6)"
 
 fig = go.Figure()
 
-# Цветные полосы (area)
 for i in range(len(df_chart) - 1):
-    color = get_color(df_chart["z_score"].iloc[i], lower, upper)
+    color = get_area_color(df_chart["z_score"].iloc[i], lower, upper)
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=color, width=12),
+        mode='lines', line=dict(color=color, width=14),
         fill='tozeroy', fillcolor=color,
         showlegend=False, hoverinfo='skip'
     ))
 
-# Чёрная тонкая линия (цена)
 fig.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["close"],
-    mode='lines', line=dict(color='#000000', width=1.5),
-    name="PRICE", hovertemplate='%{y:,.2f}<extra></extra>'
+    mode='lines', line=dict(color='#000000', width=1.2),
+    name="ЦЕНА", hovertemplate='%{y:,.2f}<extra></extra>'
 ))
 
 fig.update_layout(
-    height=380, template="plotly_dark", margin=dict(l=0, r=0, t=20, b=20),
+    height=380, template="plotly_dark", margin=dict(l=0, r=0, t=10, b=10),
     xaxis_title="", yaxis_title="", yaxis_type="log" if price > 100 else "linear",
-    hovermode="x unified", showlegend=False,
-    paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a"
+    hovermode="x unified", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a"
 )
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 8. Z-SCORE ГРАФИК — ЖИРНАЯ ЛИНИЯ
+# 7. ГРАФИК Z-SCORE
 # ============================================================
 
-st.markdown("<div class='section-title'>Z-SCORE & THRESHOLDS</div>", unsafe_allow_html=True)
+st.markdown("<div class='section-title'>📉 Z-SCORE И ПОРОГИ</div>", unsafe_allow_html=True)
 
 fig2 = go.Figure()
 fig2.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["z_score"],
-    mode='lines', name='Z-SCORE', line=dict(color='#00d4ff', width=3),
+    mode='lines', name='Z-SCORE', line=dict(color='#00d4ff', width=2.5),
     fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)'
 ))
 fig2.add_hline(y=lower, line_dash="dash", line_color="#00ff44", line_width=2,
-               annotation_text=f"BUY ({lower:.2f})", annotation_position="right")
+               annotation_text=f"ПОКУПКА ({lower:.2f})", annotation_position="right")
 fig2.add_hline(y=upper, line_dash="dash", line_color="#ff4422", line_width=2,
-               annotation_text=f"SELL ({upper:.2f})", annotation_position="right")
-fig2.add_hline(y=0, line_dash="dot", line_color="#444444")
+               annotation_text=f"ПРОДАЖА ({upper:.2f})", annotation_position="right")
+fig2.add_hline(y=0, line_dash="dot", line_color="#555555")
 
 fig2.update_layout(
-    height=280, template="plotly_dark", margin=dict(l=0, r=0, t=20, b=20),
+    height=280, template="plotly_dark", margin=dict(l=0, r=0, t=10, b=10),
     xaxis_title="", yaxis_title="", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a"
 )
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# 9. AI-АНАЛИЗ
+# 8. ФУНДАМЕНТАЛЬНЫЕ ДАННЫЕ (опционально)
 # ============================================================
 
-st.markdown("<div class='section-title'>AI ANALYSIS</div>", unsafe_allow_html=True)
+if fundamentals:
+    st.markdown("<div class='section-title'>🔬 ФУНДАМЕНТАЛЬНЫЕ МЕТРИКИ</div>", unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
+    with f1: st.metric("РЫНОЧНАЯ КАП.", f"${fundamentals['market_cap']/1e9:.2f}B")
+    with f2: st.metric("FDV", f"${fundamentals['fully_diluted_valuation']/1e9:.2f}B")
+    with f3: st.metric("ОБЪЁМ 24Ч", f"${fundamentals['total_volume']/1e6:.1f}M")
+    with f4:
+        pc = fundamentals['price_change_24h']
+        color = "#00ff44" if pc > 0 else "#ff2200"
+        st.markdown(f"<div><div style='color:#aaa;'>ИЗМЕНЕНИЕ 24Ч</div><div style='color:{color}; font-size:1.5rem;'>{pc:+.1f}%</div></div>", unsafe_allow_html=True)
 
-if st.button("GENERATE AI ANALYSIS", type="primary"):
-    with st.spinner("DEEPSEEK PROCESSING..."):
-        # Опционально: здесь будет вызов AI
-        st.info("AI analysis will appear here. Ensure DEEPSEEK_API_KEY is configured in Secrets.")
+# ============================================================
+# 9. ПОДВАЛ
+# ============================================================
+
+st.markdown("<hr>", unsafe_allow_html=True)
+moscow_tz = timezone(timedelta(hours=3))
+moscow_time = datetime.now(moscow_tz)
+st.caption(f"📅 ОБНОВЛЕНО: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК)")
+st.caption("⚡ АДАПТИВНЫЙ Z-SCORE | ИСТОЧНИКИ: CRYPTOCOMPARE / YFINANCE / COINGECKO")
+st.caption("⚠️ НЕ ЯВЛЯЕТСЯ ИНВЕСТИЦИОННОЙ РЕКОМЕНДАЦИЕЙ")
