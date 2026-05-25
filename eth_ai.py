@@ -2,11 +2,20 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import plotly.graph_objects as go
 import yfinance as yf
 
+# ============================================================
+# НАСТРОЙКИ СТРАНИЦЫ И АВТООБНОВЛЕНИЕ
+# ============================================================
+
 st.set_page_config(page_title="Мульти-актив Детектор Дна", layout="wide")
+
+# Автообновление страницы каждые 5 минут (300 секунд)
+st.markdown("""
+    <meta http-equiv="refresh" content="300">
+""", unsafe_allow_html=True)
 
 st.title("📊 Мульти-актив Детектор Дна")
 st.markdown("### 🚀 Адаптивный Z-Score + Funding Rate + Altcoin Season Index")
@@ -68,7 +77,6 @@ def get_funding_rate_status(symbol):
         return None
     
     try:
-        url = "https://api.coinglass.com/api/v1/funding_rate"
         # Упрощённый вариант — в реальном коде нужен API ключ
         # Здесь возвращаем эмуляцию
         return {"status": "neutral", "value": 0.005}
@@ -78,8 +86,6 @@ def get_funding_rate_status(symbol):
 def get_altcoin_season_index():
     """Возвращает индекс альтсезона (0-100)"""
     try:
-        url = "https://www.blockchaincenter.net/altcoin-season-index/"
-        # Реальный парсинг сложен, для демо возвращаем значение
         # В продакшене нужно парсить страницу или использовать API
         return 24  # текущее значение по данным от 24.05.2026
     except:
@@ -88,7 +94,6 @@ def get_altcoin_season_index():
 def get_google_trends_interest():
     """Возвращает интерес к Bitcoin (0-100)"""
     # В реальном коде нужен запрос к Google Trends API
-    # Для демо возвращаем усреднённое значение
     return 25
 
 def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text, confidence):
@@ -198,7 +203,6 @@ def calculate_metrics_adaptive(df):
     current_z = df["z_score"].iloc[-1]
     
     # Вероятность дна через логистическую функцию
-    # Используем динамическую чувствительность
     sensitivity = 1.5 if len(df) > 365 else 1.0
     current_prob = 1 / (1 + np.exp(current_z * sensitivity))
     
@@ -411,7 +415,14 @@ progress_bar.empty()
 if all_data:
     st.dataframe(pd.DataFrame(all_data), use_container_width=True, hide_index=True)
 
+# ============================================================
+# 10. ПОДВАЛ (С МОСКОВСКИМ ВРЕМЕНЕМ)
+# ============================================================
+
+moscow_tz = timezone(timedelta(hours=3))
+moscow_time = datetime.now(moscow_tz)
+
 st.markdown("---")
-st.caption(f"📅 Обновлено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"📅 Обновлено: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК)")
 st.caption("📡 Источник: CryptoCompare / yfinance | 🤖 AI: DeepSeek")
 st.caption("⚡ Адаптивный Z-Score (5-й и 95-й процентили) | ⚠️ Не инвестиционная рекомендация")
