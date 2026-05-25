@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Мульти-актив Детектор Дна")
-st.markdown("### 🚀 Адаптивный Z-Score + Funding Rate + Altcoin Season Index")
+st.markdown("### 🚀 Адаптивный Z-Score + On-Chain метрики (CoinGecko)")
 
 # ============================================================
 # 1. ФИНАЛЬНЫЙ СПИСОК АКТИВОВ
@@ -38,19 +38,95 @@ STOCK_LIST = [
 # Белый список ветеранов (используют старые пороги -1.8/1.5)
 VETERAN_LIST = ["BTC", "ETH", "BNB", "XRP", "LTC", "ADA", "DOGE", "AAPL", "MSFT", "NVDA"]
 
+# Словарь для преобразования тикеров в ID CoinGecko (только для криптовалют из списка)
+COINGECKO_IDS = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "SOL": "solana",
+    "FIL": "filecoin",
+    "LINK": "chainlink",
+    "UNI": "uniswap",
+    "NEAR": "near",
+    "ALGO": "algorand",
+    "GRT": "the-graph",
+    "CRV": "curve-dao-token",
+    "STX": "blockstack",
+    "RENDER": "render-token",
+    "ONDO": "ondo-finance",
+    "SUI": "sui",
+    "APE": "apecoin",
+    "IMX": "immutable-x",
+    "ZK": "zkSync",
+    "TWT": "trust-wallet-token",
+    "CELO": "celo",
+    "ARKM": "arkham",
+    "ONE": "harmony",
+    "GOAT": "goat",
+    "POL": "polygon",
+    "TRUMP": "maga",
+    "ARC": "arc",
+    "FLOCK": "flock"
+}
+
 # ============================================================
-# 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# 2. ФУНКЦИИ ДЛЯ РАБОТЫ С COINGECKO API
+# ============================================================
+
+@st.cache_data(ttl=600)  # Кэш на 10 минут
+def get_coingecko_fundamentals(coin_id):
+    """Получает фундаментальные данные о криптовалюте с CoinGecko"""
+    try:
+        api_key = st.secrets.get("COINGECKO_API_KEY")
+        if not api_key:
+            return None
+        
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+        params = {
+            "localization": "false",
+            "tickers": "false",
+            "market_data": "true",
+            "community_data": "true",
+            "developer_data": "true",
+            "sparkline": "false",
+            "x_cg_demo_api_key": api_key
+        }
+        
+        response = requests.get(url, params=params, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            market_data = data.get("market_data", {})
+            community_data = data.get("community_data", {})
+            developer_data = data.get("developer_data", {})
+            
+            return {
+                "price_usd": market_data.get("current_price", {}).get("usd", 0),
+                "market_cap": market_data.get("market_cap", {}).get("usd", 0),
+                "fully_diluted_valuation": market_data.get("fully_diluted_valuation", {}).get("usd", 0),
+                "total_volume": market_data.get("total_volume", {}).get("usd", 0),
+                "price_change_24h": market_data.get("price_change_percentage_24h", 0),
+                "ath_usd": market_data.get("ath", {}).get("usd", 0),
+                "atl_usd": market_data.get("atl", {}).get("usd", 0),
+                "twitter_followers": community_data.get("twitter_followers", 0),
+                "github_stars": developer_data.get("stars", 0),
+                "github_forks": developer_data.get("forks", 0)
+            }
+    except Exception as e:
+        st.warning(f"⚠️ CoinGecko API ошибка для {coin_id}: {e}")
+    return None
+
+# ============================================================
+# 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================
 
 def get_adaptive_thresholds(z_scores):
     """Адаптивные пороги на основе процентилей"""
     if len(z_scores) < 30:
-        return -1.8, 1.5  # fallback для короткой истории
+        return -1.8, 1.5
     
-    lower = np.percentile(z_scores, 5)   # 5-й процентиль (экстремальное дно)
-    upper = np.percentile(z_scores, 95)  # 95-й процентиль (экстремальный пик)
+    lower = np.percentile(z_scores, 5)
+    upper = np.percentile(z_scores, 95)
     
-    # Ограничиваем разумными пределами
     lower = max(-3.0, min(-1.0, lower))
     upper = min(3.0, max(0.5, upper))
     
@@ -59,51 +135,48 @@ def get_adaptive_thresholds(z_scores):
 def get_signal_adaptive(z_score, lower_thr, upper_thr, is_veteran):
     """Гибкий сигнал с учётом адаптивных порогов"""
     if is_veteran:
-        # Для ветеранов — старые проверенные пороги
         if z_score <= -1.8: return "🔴 ЭКСТРЕМАЛЬНАЯ ПОКУПКА", "#ef4444"
         elif z_score <= -1.2: return "🟡 ЗОНА НАКОПЛЕНИЯ", "#eab308"
         elif z_score >= 1.5: return "🟢 ЭЙФОРИЯ — ПРОДАВАЙ", "#22c55e"
         else: return "⚪ НЕЙТРАЛЬНО", "#6b7280"
     else:
-        # Адаптивные пороги
         if z_score <= lower_thr: return "🔴 ПОКУПКА (АДАПТИВ)", "#ef4444"
         elif z_score <= lower_thr * 0.7: return "🟡 ЗОНА ВНИМАНИЯ", "#eab308"
         elif z_score >= upper_thr: return "🟢 ПРОДАЖА (АДАПТИВ)", "#22c55e"
         else: return "⚪ НЕЙТРАЛЬНО", "#6b7280"
 
-def get_funding_rate_status(symbol):
-    """Возвращает статус фандинг рейт для криптоактивов"""
-    if symbol not in ["BTC", "ETH", "SOL", "BNB", "LINK"]:
-        return None
-    
-    try:
-        # Упрощённый вариант — в реальном коде нужен API ключ
-        # Здесь возвращаем эмуляцию
-        return {"status": "neutral", "value": 0.005}
-    except:
-        return None
-
 def get_altcoin_season_index():
-    """Возвращает индекс альтсезона (0-100)"""
     try:
-        # В продакшене нужно парсить страницу или использовать API
-        return 24  # текущее значение по данным от 24.05.2026
+        return 24
     except:
         return 50
 
 def get_google_trends_interest():
-    """Возвращает интерес к Bitcoin (0-100)"""
-    # В реальном коде нужен запрос к Google Trends API
     return 25
 
-def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text, confidence):
-    """AI-анализ с учётом дополнительных факторов"""
+def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, current_prob, signal_text, confidence, fundamentals):
+    """AI-анализ с учётом фундаментальных данных CoinGecko"""
     
     deepseek_key = st.secrets.get("DEEPSEEK_API_KEY", "")
     if not deepseek_key:
         return "❌ API ключ DeepSeek не найден."
     
     asset_type = "криптовалюта" if asset_symbol in CRYPTO_LIST else "акция"
+    
+    # Формируем строку с фундаментальными данными
+    fundamental_text = ""
+    if fundamentals:
+        fundamental_text = f"""
+ДОПОЛНИТЕЛЬНЫЕ ДАННЫЕ (CoinGecko):
+- Рыночная капитализация: ${fundamentals.get('market_cap', 0):,.0f}
+- Полная оценка (FDV): ${fundamentals.get('fully_diluted_valuation', 0):,.0f}
+- Объём за 24ч: ${fundamentals.get('total_volume', 0):,.0f}
+- Изменение за 24ч: {fundamentals.get('price_change_24h', 0):.1f}%
+- ATH: ${fundamentals.get('ath_usd', 0):,.0f}
+- ATL: ${fundamentals.get('atl_usd', 0):,.0f}
+- Twitter подписчики: {fundamentals.get('twitter_followers', 0):,}
+- GitHub звёзды: {fundamentals.get('github_stars', 0):,}
+"""
     
     prompt = f"""Проанализируй {asset_name} ({asset_symbol}, {asset_type}):
 
@@ -113,22 +186,19 @@ def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, c
 - Вероятность дна: {current_prob*100:.1f}%
 - Сигнал: {signal_text}
 - Надёжность сигнала: {confidence:.0f}%
-
-Дополнительные факторы (крипто):
-- Индекс альтсезона: {get_altcoin_season_index()}/100 (ниже 75 = сезон биткоина)
-- Интерес Google Trends: {get_google_trends_interest()}/100
-
-Напиши КРАТКИЙ анализ (3-4 предложения) на русском:
+{fundamental_text}
+Напиши КРАТКИЙ анализ (4-5 предложений) на русском:
 1. Что означает текущий сигнал
-2. Рекомендация (покупать/продавать/держать)
-3. Главный фактор риска"""
+2. Насколько фундаментальные данные подтверждают или опровергают сигнал
+3. Рекомендация (покупать/продавать/держать)
+4. Главный фактор риска"""
 
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {deepseek_key}", "Content-Type": "application/json"}
     data = {
         "model": "deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 500,
+        "max_tokens": 600,
         "temperature": 0.7
     }
     
@@ -142,10 +212,10 @@ def call_deepseek_analysis(asset_name, asset_symbol, current_price, current_z, c
         return f"❌ Ошибка: {str(e)[:100]}"
 
 # ============================================================
-# 3. ЗАГРУЗКА ДАННЫХ
+# 4. ЗАГРУЗКА ЦЕНОВЫХ ДАННЫХ
 # ============================================================
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)  # Кэш на 10 минут
 def load_crypto_data(symbol, days=500):
     try:
         if "CRYPTOCOMPARE_KEY" in st.secrets:
@@ -165,7 +235,7 @@ def load_crypto_data(symbol, days=500):
         pass
     return None
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)  # Кэш на 10 минут
 def load_stock_data(symbol, days=500):
     try:
         ticker = symbol
@@ -182,47 +252,39 @@ def load_stock_data(symbol, days=500):
     return None
 
 def calculate_metrics_adaptive(df):
-    """Адаптивный Z-Score на основе всей доступной истории"""
     if df is None or len(df) < 30:
         return None, None, None, None, None, None
     
     df = df.copy()
     df["returns"] = df["close"].pct_change()
-    
-    # Используем ВСЮ доступную историю для расчёта Z-Score
     mean_ret = df["returns"].mean()
     std_ret = df["returns"].std()
     df["z_score"] = (df["returns"] - mean_ret) / (std_ret + 1e-10)
     df = df.fillna(0)
     
-    # Адаптивные пороги на основе процентилей
     z_scores = df["z_score"].values
     lower_thr, upper_thr = get_adaptive_thresholds(z_scores)
     
     current_price = df["close"].iloc[-1]
     current_z = df["z_score"].iloc[-1]
-    
-    # Вероятность дна через логистическую функцию
     sensitivity = 1.5 if len(df) > 365 else 1.0
     current_prob = 1 / (1 + np.exp(current_z * sensitivity))
-    
-    # Коэффициент доверия к сигналу
     confidence = min(100, len(df) / 365 * 100)
     
     return df, current_price, current_z, current_prob, confidence, (lower_thr, upper_thr)
 
 # ============================================================
-# 4. ИНТЕРФЕЙС
+# 5. ИНТЕРФЕЙС
 # ============================================================
 
 with st.sidebar:
     st.header("⚙️ Настройки")
     st.markdown("---")
     st.caption("🤖 Адаптивный Z-Score (процентили)")
-    st.caption("📊 Funding Rate (для BTC/ETH)")
+    st.caption("📊 On-Chain метрики (CoinGecko)")
     st.caption("📈 Altcoin Season Index")
     st.caption("🔍 Google Trends Interest")
-    st.caption("🕐 Обновление: каждые 5 минут")
+    st.caption("🕐 Обновление: каждые 5-10 минут")
     st.caption(f"📋 Всего активов: {len(CRYPTO_LIST) + len(STOCK_LIST)}")
 
 # Выбор актива
@@ -233,13 +295,20 @@ else:
     selected_asset = st.selectbox("Выберите акцию", STOCK_LIST)
 
 # ============================================================
-# 5. ЗАГРУЗКА И РАСЧЁТ
+# 6. ЗАГРУЗКА И РАСЧЁТ
 # ============================================================
 
 is_crypto = selected_asset in CRYPTO_LIST
 is_veteran = selected_asset in VETERAN_LIST
 
-with st.spinner(f"🔄 Загрузка {selected_asset}..."):
+# Загружаем фундаментальные данные (только для крипты)
+fundamentals = None
+if is_crypto and selected_asset in COINGECKO_IDS:
+    coin_id = COINGECKO_IDS[selected_asset]
+    with st.spinner(f"🔄 Загрузка фундаментальных данных для {selected_asset}..."):
+        fundamentals = get_coingecko_fundamentals(coin_id)
+
+with st.spinner(f"🔄 Загрузка цены {selected_asset}..."):
     if is_crypto:
         df = load_crypto_data(selected_asset)
     else:
@@ -253,33 +322,42 @@ df, current_price, current_z, current_prob, confidence, (lower_thr, upper_thr) =
 signal_text, signal_color = get_signal_adaptive(current_z, lower_thr, upper_thr, is_veteran)
 
 # ============================================================
-# 6. ОТОБРАЖЕНИЕ
+# 7. ОТОБРАЖЕНИЕ (С ЯРКИМИ ЦВЕТАМИ)
 # ============================================================
 
 st.header(f"{selected_asset} — {'криптовалюта' if is_crypto else 'акция'}")
 
-# Карточки
+# Карточки с яркими цветами
 cola, colb, colc, cold, cole = st.columns(5)
-with cola: st.metric("💰 ЦЕНА", f"${current_price:,.2f}")
-with colb: st.metric("📊 Z-SCORE", f"{current_z:.2f}")
-with colc: st.metric("🎯 ВЕРОЯТНОСТЬ ДНА", f"{current_prob*100:.1f}%")
-with cold: st.metric("📈 СИГНАЛ", signal_text.split("—")[0])
-with cole: st.metric("🔒 НАДЁЖНОСТЬ", f"{confidence:.0f}%")
+with cola:
+    st.metric("💰 ЦЕНА", f"${current_price:,.2f}", delta=None)
+with colb:
+    st.metric("📊 Z-SCORE", f"{current_z:.2f}", delta=None)
+with colc:
+    prob_color = "#22c55e" if current_prob > 0.6 else "#eab308" if current_prob > 0.4 else "#ef4444"
+    st.markdown(f"<div style='background: {prob_color}20; padding: 10px; border-radius: 10px;'><p style='color: {prob_color}; font-size: 24px; font-weight: bold;'>{current_prob*100:.1f}%</p><p style='color: gray;'>ВЕРОЯТНОСТЬ ДНА</p></div>", unsafe_allow_html=True)
+with cold:
+    st.metric("📈 СИГНАЛ", signal_text.split("—")[0], delta=None)
+with cole:
+    conf_color = "#22c55e" if confidence > 70 else "#eab308" if confidence > 40 else "#ef4444"
+    st.metric("🔒 НАДЁЖНОСТЬ", f"{confidence:.0f}%", delta=None)
 
 # Дополнительные метрики (для криптоактивов)
-if is_crypto:
+if is_crypto and fundamentals:
     st.markdown("---")
-    colf, colg, colh = st.columns(3)
+    colf, colg, colh, coli, colj = st.columns(5)
     with colf:
-        alt_index = get_altcoin_season_index()
-        st.metric("🏆 АЛЬТСЕЗОН", f"{alt_index}/100", delta="Сезон BTC" if alt_index < 75 else "Сезон альтов")
+        st.metric("🏆 КАПИТАЛИЗАЦИЯ", f"${fundamentals['market_cap']/1e9:.2f}B")
     with colg:
-        trends = get_google_trends_interest()
-        st.metric("🔍 ИНТЕРЕС BTC", f"{trends}/100", delta="Низкий" if trends < 30 else "Высокий")
+        st.metric("💧 FDV", f"${fundamentals['fully_diluted_valuation']/1e9:.2f}B")
     with colh:
-        funding = get_funding_rate_status(selected_asset)
-        if funding:
-            st.metric("💸 ФАНДИНГ", f"{funding['value']*100:.3f}%")
+        st.metric("📊 ОБЪЁМ 24H", f"${fundamentals['total_volume']/1e6:.1f}M")
+    with coli:
+        price_change = fundamentals.get('price_change_24h', 0)
+        change_color = "#22c55e" if price_change > 0 else "#ef4444"
+        st.markdown(f"<div><p style='color: gray;'>📈 24H ИЗМЕНЕНИЕ</p><p style='color: {change_color}; font-size: 20px;'>{price_change:+.1f}%</p></div>", unsafe_allow_html=True)
+    with colj:
+        st.metric("📧 TWITTER", f"{fundamentals.get('twitter_followers', 0):,}")
 
 # Главный сигнал
 st.markdown(f"""
@@ -294,7 +372,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 7. AI-АНАЛИЗ
+# 8. AI-АНАЛИЗ (С ФУНДАМЕНТАЛЬНЫМИ ДАННЫМИ)
 # ============================================================
 
 st.markdown("---")
@@ -304,7 +382,7 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
     with st.spinner("🧠 DeepSeek анализирует..."):
         analysis = call_deepseek_analysis(
             selected_asset, selected_asset, current_price, current_z,
-            current_prob, signal_text.split("—")[0], confidence
+            current_prob, signal_text.split("—")[0], confidence, fundamentals
         )
     
     analysis_html = analysis.replace('\n', '<br>').replace('•', '&bull;')
@@ -314,12 +392,12 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
                 border: 1px solid #2a2a3e;'>
         <h4 style='margin-bottom: 10px; color: #ffffff;'>📈 Анализ от DeepSeek AI</h4>
         <div style='color: #ffffff; font-size: 15px; line-height: 1.6;'>{analysis_html}</div>
-        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе текущих данных</p>
+        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе данных Z-Score + CoinGecko</p>
     </div>
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 8. ГРАФИКИ
+# 9. ГРАФИКИ (С ЯРКИМИ ЦВЕТАМИ)
 # ============================================================
 
 st.markdown("---")
@@ -328,13 +406,13 @@ st.subheader("📈 ГРАФИК ЦЕНЫ — АДАПТИВНЫЙ ЦВЕТ")
 df_chart = df.tail(500).copy()
 
 def get_color(z, lower, upper):
-    if z <= lower: return "#00ff44"
-    elif z <= lower * 0.7: return "#44ff44"
-    elif z <= -0.5: return "#88ff88"
-    elif z <= 0.5: return "#cccccc"
-    elif z <= 1.2: return "#ffaa66"
-    elif z <= upper: return "#ff6644"
-    else: return "#ff2200"
+    if z <= lower: return "#00ff44"       # ярко-зелёный (дно)
+    elif z <= lower * 0.7: return "#44ff44" # светло-зелёный
+    elif z <= -0.5: return "#88ff88"       # бледно-зелёный
+    elif z <= 0.5: return "#cccccc"        # серый
+    elif z <= 1.2: return "#ffaa66"        # оранжевый
+    elif z <= upper: return "#ff6644"       # красно-оранжевый
+    else: return "#ff2200"                  # ярко-красный (пик)
 
 fig = go.Figure()
 for i in range(len(df_chart) - 1):
@@ -342,7 +420,7 @@ for i in range(len(df_chart) - 1):
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=color, width=2),
+        mode='lines', line=dict(color=color, width=2.5),
         showlegend=False, hoverinfo='skip'
     ))
 
@@ -363,21 +441,21 @@ st.plotly_chart(fig, use_container_width=True)
 st.subheader("📉 Z-SCORE С АДАПТИВНЫМИ ПОРОГАМИ")
 fig2 = go.Figure()
 fig2.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["z_score"],
-                          mode='lines', name='Z-Score', line=dict(color='#38bdf8', width=2),
-                          fill='tozeroy', fillcolor='rgba(56,189,248,0.15)',
+                          mode='lines', name='Z-Score', line=dict(color='#00d4ff', width=2.5),  # ярко-голубой
+                          fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.15)',
                           text=[f"📅 {d.strftime('%Y-%m-%d')}<br>📊 Z-Score: {z:.2f}" 
                                 for d, z in zip(df_chart["date"], df_chart["z_score"])],
                           hovertemplate='%{text}<extra></extra>'))
-fig2.add_hline(y=lower_thr, line_dash="dash", line_color="#22c55e",
+fig2.add_hline(y=lower_thr, line_dash="dash", line_color="#22ff55", line_width=2,
                annotation_text=f"ПОКУПКА ({lower_thr:.2f}σ)", annotation_position="right")
-fig2.add_hline(y=upper_thr, line_dash="dash", line_color="#ef4444",
+fig2.add_hline(y=upper_thr, line_dash="dash", line_color="#ff4422", line_width=2,
                annotation_text=f"ПРОДАЖА ({upper_thr:.2f}σ)", annotation_position="right")
-fig2.add_hline(y=0, line_dash="dot", line_color="#6b7280")
+fig2.add_hline(y=0, line_dash="dot", line_color="#888888")
 fig2.update_layout(height=300, template="plotly_dark", yaxis_range=[-3.5, 3.5])
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# 9. СВОДНАЯ ТАБЛИЦА
+# 10. СВОДНАЯ ТАБЛИЦА
 # ============================================================
 
 st.markdown("---")
@@ -416,7 +494,7 @@ if all_data:
     st.dataframe(pd.DataFrame(all_data), use_container_width=True, hide_index=True)
 
 # ============================================================
-# 10. ПОДВАЛ (С МОСКОВСКИМ ВРЕМЕНЕМ)
+# 11. ПОДВАЛ (С МОСКОВСКИМ ВРЕМЕНЕМ)
 # ============================================================
 
 moscow_tz = timezone(timedelta(hours=3))
@@ -424,5 +502,5 @@ moscow_time = datetime.now(moscow_tz)
 
 st.markdown("---")
 st.caption(f"📅 Обновлено: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК)")
-st.caption("📡 Источник: CryptoCompare / yfinance | 🤖 AI: DeepSeek")
-st.caption("⚡ Адаптивный Z-Score (5-й и 95-й процентили) | ⚠️ Не инвестиционная рекомендация")
+st.caption("📡 Источник: CryptoCompare / yfinance / CoinGecko | 🤖 AI: DeepSeek")
+st.caption("⚡ Адаптивный Z-Score (5-й и 95-й процентили) | 🎨 Яркие цвета графиков | ⚠️ Не инвестиционная рекомендация")
