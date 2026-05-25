@@ -288,13 +288,13 @@ df, current_price, current_z, current_prob, confidence, (lower_thr, upper_thr), 
 signal_text, signal_color = get_signal_adaptive(current_z, lower_thr, upper_thr, is_veteran)
 
 # ============================================================
-# 7. ПРОПОРЦИОНАЛЬНАЯ ЛИНЕЙКА ИНДИКАТОРОВ
+# 7. ПРОПОРЦИОНАЛЬНАЯ ЛИНЕЙКА ИНДИКАТОРОВ (БЕЗ СИГНАЛА)
 # ============================================================
 
 st.header(f"{selected_asset} — {'криптовалюта' if is_crypto else 'акция'}")
 
-# Горизонтальная пропорциональная панель (5 колонок)
-col1, col2, col3, col4, col5 = st.columns(5)
+# Горизонтальная пропорциональная панель перестроена на 4 колонки
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric("💰 ЦЕНА", f"${current_price:,.2f}")
@@ -312,14 +312,6 @@ with col3:
     """, unsafe_allow_html=True)
 
 with col4:
-    st.markdown(f"""
-        <div style='background: {signal_color}15; padding: 11px; border-radius: 8px; border: 1px solid {signal_color}40; text-align: center;'>
-            <p style='color: gray; margin: 0; font-size: 14px; font-weight: bold;'>СИГНАЛ</p>
-            <p style='color: {signal_color}; font-size: 15px; font-weight: bold; margin: 10px 0 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{signal_text.split('—')[0]}</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col5:
     rsi_color = "#ef4444" if current_rsi <= 30 else "#22c55e" if current_rsi >= 70 else "#00d4ff"
     st.markdown(f"""
         <div style='background: {rsi_color}15; padding: 11px; border-radius: 8px; border: 1px solid {rsi_color}40; text-align: center;'>
@@ -328,7 +320,7 @@ with col5:
         </div>
     """, unsafe_allow_html=True)
 
-# Главный текстовый блок порогов
+# Главный текстовый блок порогов (здесь статус "Сигнал" сохранен текстом)
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); 
             padding: 15px; border-radius: 12px; margin: 20px 0; text-align: center;
@@ -360,7 +352,7 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
                 border: 1px solid #2a2a3e;'>
         <h4 style='margin-bottom: 10px; color: #ffffff;'>📈 Анализ от DeepSeek AI</h4>
         <div style='color: #ffffff; font-size: 15px; line-height: 1.6;'>{analysis_html}</div>
-        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе Z-Score + фоного фундамента</p>
+        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе Z-Score + фонового фундамента</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -389,7 +381,7 @@ for i in range(len(df_chart) - 1):
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=color, width=3.5), # Сделали линии тоньше (3.5 вместо 6)
+        mode='lines', line=dict(color=color, width=3.5),
         showlegend=False, hoverinfo='skip'
     ))
 
@@ -402,7 +394,8 @@ fig.add_trace(go.Scatter(
     name="Информация", hovertemplate='%{text}<extra></extra>'
 ))
 
-fig.update_layout(height=450, template="plotly_dark", xaxis_title="Дата",
+# Убрано слово "дата" из xaxis_title
+fig.update_layout(height=450, template="plotly_dark", xaxis_title="",
                   yaxis_title="Цена (USD)", yaxis_type="log" if current_price > 100 else "linear",
                   hovermode="x unified",
                   font=dict(family="Times New Roman, Times, serif", size=13))
