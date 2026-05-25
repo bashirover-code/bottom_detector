@@ -10,7 +10,7 @@ import yfinance as yf
 # НАСТРОЙКИ СТРАНИЦЫ И АВТООБНОВЛЕНИЕ
 # ============================================================
 
-st.set_page_config(page_title="Асимметричные возможности (детектор дна)", layout="wide")
+st.set_page_config(page_title="Детектор дна активов", layout="wide")
 
 # Глобальный шрифт Times New Roman
 st.markdown("""
@@ -23,7 +23,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Асимметричные возможности (детектор дна)")
+st.title("📊 Детектор дна активов")
 
 # ============================================================
 # 1. ФИНАЛЬНЫЙ СПИСОК АКТИВОВ
@@ -360,7 +360,7 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
                 border: 1px solid #2a2a3e;'>
         <h4 style='margin-bottom: 10px; color: #ffffff;'>📈 Анализ от DeepSeek AI</h4>
         <div style='color: #ffffff; font-size: 15px; line-height: 1.6;'>{analysis_html}</div>
-        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе Z-Score + фонового фундамента</p>
+        <p style='color: #888888; font-size: 12px; margin-top: 10px;'>⚡ DeepSeek Chat | Анализ на основе Z-Score + фоного фундамента</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -369,18 +369,19 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
 # ============================================================
 
 st.markdown("---")
-st.subheader("📈 ГРАФИК ЦЕНЫ — АДАПТИВНЫЙ ЦВЕТ")
+st.subheader("📈 ГРАФИК ЦЕНЫ")
 
 df_chart = df.tail(500).copy()
 
 def get_color(z, lower, upper):
-    if z <= lower: return "#00ff44"
-    elif z <= lower * 0.7: return "#44ff44"
-    elif z <= -0.5: return "#88ff88"
-    elif z <= 0.5: return "#cccccc"
-    elif z <= 1.2: return "#ffaa66"
-    elif z <= upper: return "#ff6644"
-    else: return "#ff2200"
+    """Сочная неоновая палитра для лучшей видимости тонких линий"""
+    if z <= lower: return "#00ff66"        # Сочный неоновый зеленый (дно)
+    elif z <= lower * 0.7: return "#39ff14"  # Кислотный лайм
+    elif z <= -0.5: return "#bfff00"         # Лимонный
+    elif z <= 0.5: return "#e5e7eb"          # Чистый контрастный светло-серый (флэт)
+    elif z <= 1.2: return "#ffb703"          # Сочный оранжевый
+    elif z <= upper: return "#ff5500"        # Яркий рыжий
+    else: return "#ff0055"                   # Сочный фуксия/огненно-красный (хай)
 
 fig = go.Figure()
 for i in range(len(df_chart) - 1):
@@ -388,11 +389,9 @@ for i in range(len(df_chart) - 1):
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=color, width=6),
+        mode='lines', line=dict(color=color, width=3.5), # Сделали линии тоньше (3.5 вместо 6)
         showlegend=False, hoverinfo='skip'
     ))
-
-# Тонкий черный график удален, как вы и просили. Теперь видна только цветная линия индикатора.
 
 fig.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["close"],
