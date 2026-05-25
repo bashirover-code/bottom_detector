@@ -11,32 +11,34 @@ import yfinance as yf
 # ============================================================
 
 st.set_page_config(
-    page_title="Детектор Дна",
+    page_title="Асимметричные возможности",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Скрываем левую панель и лишние элементы
+# Полностью белый фон, скрываем левую панель
 st.markdown("""
     <style>
         [data-testid="collapsedControl"] { display: none; }
         .main > div { padding-top: 0; }
         header { display: none; }
         footer { display: none; }
-        .stSelectbox > div { background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 8px; }
+        .stApp { background-color: white; }
+        .stSelectbox > div { background-color: white; border: 1px solid #ccc; border-radius: 8px; }
         .stRadio > div { gap: 8px; }
-        .stRadio label { background-color: #e8e8e8; padding: 4px 16px; border-radius: 20px; color: #333; }
-        .stRadio [data-baseweb="radio"]:checked + label { background-color: #00aa44; color: #fff; font-weight: bold; }
+        .stRadio label { background-color: #f0f0f0; padding: 4px 16px; border-radius: 20px; color: #333; }
+        .stRadio [data-baseweb="radio"]:checked + label { background-color: #00aa44; color: white; font-weight: bold; }
         div[data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 700 !important; color: #222; }
         div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; letter-spacing: 1px; color: #666; }
-        .stButton button { background: #00aa44; color: #fff; font-weight: bold; border: none; padding: 8px 24px; border-radius: 6px; }
-        .stButton button:hover { background: #008833; color: #fff; }
+        .stButton button { background: #00aa44; color: white; font-weight: bold; border: none; padding: 8px 24px; border-radius: 6px; }
+        .stButton button:hover { background: #008833; color: white; }
         h1, h2, h3, h4, h5, h6, p, span, div { font-family: 'Times New Roman', Times, serif !important; }
-        .metric-card { background-color: #f5f5f5; border-radius: 12px; padding: 16px; border-left: 3px solid; margin: 8px 0; }
-        .signal-card { background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%); border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #ccc; }
+        .metric-card { background-color: #f8f8f8; border-radius: 12px; padding: 16px; border-left: 3px solid; margin: 8px 0; }
+        .signal-card { background: linear-gradient(135deg, #f8f8f8 0%, #f0f0f0 100%); border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #ddd; }
         .section-title { font-size: 0.9rem; font-weight: 600; letter-spacing: 2px; color: #00aa44; margin-bottom: 16px; border-bottom: 1px solid #ddd; padding-bottom: 8px; text-transform: uppercase; }
         hr { border-color: #ddd; margin: 16px 0; }
         .stDataFrame { border: 1px solid #ddd; border-radius: 12px; overflow: hidden; }
+        .stProgress > div > div { background-color: #00aa44; }
     </style>
     <meta http-equiv="refresh" content="300">
 """, unsafe_allow_html=True)
@@ -45,7 +47,7 @@ st.markdown("""
 # ЗАГОЛОВОК
 # ============================================================
 
-st.title("Детектор Дна")
+st.title("Асимметричные возможности")
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # ============================================================
@@ -270,7 +272,7 @@ with c4:
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 6. ГРАФИК ЦЕНЫ
+# 6. ГРАФИК ЦЕНЫ (БЕЗ ВЕРТИКАЛЬНЫХ ЛИНИЙ, ЛИНИИ СОЧНЫЕ)
 # ============================================================
 
 st.markdown("<div class='section-title'>График цены</div>", unsafe_allow_html=True)
@@ -278,29 +280,31 @@ st.markdown("<div class='section-title'>График цены</div>", unsafe_all
 df_chart = df.tail(500).copy()
 
 def get_area_color(z, lower, upper):
-    if z <= lower: return "rgba(0, 170, 68, 0.3)"
-    elif z <= lower * 0.7: return "rgba(136, 204, 68, 0.25)"
-    elif z <= -0.5: return "rgba(136, 204, 68, 0.2)"
+    if z <= lower: return "rgba(0, 170, 68, 0.35)"
+    elif z <= lower * 0.7: return "rgba(136, 204, 68, 0.3)"
+    elif z <= -0.5: return "rgba(136, 204, 68, 0.25)"
     elif z <= 0.5: return "rgba(136, 136, 136, 0.15)"
-    elif z <= 1.2: return "rgba(204, 136, 68, 0.25)"
-    elif z <= upper: return "rgba(204, 68, 0, 0.3)"
-    else: return "rgba(204, 34, 0, 0.4)"
+    elif z <= 1.2: return "rgba(204, 136, 68, 0.3)"
+    elif z <= upper: return "rgba(204, 68, 0, 0.35)"
+    else: return "rgba(204, 34, 0, 0.45)"
 
 fig = go.Figure()
 
+# Цветные толстые полосы
 for i in range(len(df_chart) - 1):
     color = get_area_color(df_chart["z_score"].iloc[i], lower, upper)
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode='lines', line=dict(color=color, width=12),
+        mode='lines', line=dict(color=color, width=16),
         fill='tozeroy', fillcolor=color,
         showlegend=False, hoverinfo='skip'
     ))
 
+# Чёрная тонкая линия цены
 fig.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["close"],
-    mode='lines', line=dict(color='#000000', width=1.2),
+    mode='lines', line=dict(color='#000000', width=1.5),
     name="Цена"
 ))
 
@@ -309,13 +313,13 @@ fig.update_layout(
     xaxis_title="", yaxis_title="", yaxis_type="log" if price > 100 else "linear",
     hovermode="x unified", showlegend=False,
     plot_bgcolor="white", paper_bgcolor="white",
-    xaxis=dict(showgrid=False, showline=True, linecolor="#ccc"),
-    yaxis=dict(showgrid=True, gridcolor="#eee", showline=True, linecolor="#ccc")
+    xaxis=dict(showgrid=False, showline=False, showticklabels=True, ticks=""),
+    yaxis=dict(showgrid=True, gridcolor="#e0e0e0", showline=True, linecolor="#ccc")
 )
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 7. ГРАФИК Z-SCORE
+# 7. ГРАФИК Z-SCORE (БЕЗ ВЕРТИКАЛЬНЫХ ЛИНИЙ)
 # ============================================================
 
 st.markdown("<div class='section-title'>Z-Score и пороги</div>", unsafe_allow_html=True)
@@ -323,26 +327,26 @@ st.markdown("<div class='section-title'>Z-Score и пороги</div>", unsafe_a
 fig2 = go.Figure()
 fig2.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["z_score"],
-    mode='lines', name='Z-Score', line=dict(color='#2288cc', width=2.5),
+    mode='lines', name='Z-Score', line=dict(color='#2288cc', width=3),
     fill='tozeroy', fillcolor='rgba(34, 136, 204, 0.1)'
 ))
-fig2.add_hline(y=lower, line_dash="dash", line_color="#00aa44", line_width=2,
+fig2.add_hline(y=lower, line_dash="dash", line_color="#00aa44", line_width=2.5,
                annotation_text=f"Покупка ({lower:.2f})", annotation_position="right")
-fig2.add_hline(y=upper, line_dash="dash", line_color="#cc2200", line_width=2,
+fig2.add_hline(y=upper, line_dash="dash", line_color="#cc2200", line_width=2.5,
                annotation_text=f"Продажа ({upper:.2f})", annotation_position="right")
-fig2.add_hline(y=0, line_dash="dot", line_color="#999999")
+fig2.add_hline(y=0, line_dash="dot", line_color="#999999", line_width=1)
 
 fig2.update_layout(
     height=280, margin=dict(l=0, r=0, t=10, b=10),
     xaxis_title="", yaxis_title="",
     plot_bgcolor="white", paper_bgcolor="white",
-    xaxis=dict(showgrid=False, showline=True, linecolor="#ccc"),
-    yaxis=dict(showgrid=True, gridcolor="#eee", showline=True, linecolor="#ccc")
+    xaxis=dict(showgrid=False, showline=False, showticklabels=True, ticks=""),
+    yaxis=dict(showgrid=True, gridcolor="#e0e0e0", showline=True, linecolor="#ccc")
 )
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# 8. AI-АНАЛИЗ (ВОЗВРАЩЁН)
+# 8. AI-АНАЛИЗ
 # ============================================================
 
 st.markdown("<div class='section-title'>AI-анализ</div>", unsafe_allow_html=True)
@@ -352,7 +356,7 @@ if st.button("Получить AI-анализ", type="primary"):
         analysis = call_deepseek_analysis(selected_asset, price, z, prob, signal_text)
     
     st.markdown(f"""
-    <div style='background-color: #f5f5f5; padding: 20px; border-radius: 16px; margin: 10px 0; border: 1px solid #ddd;'>
+    <div style='background-color: #f8f8f8; padding: 20px; border-radius: 16px; margin: 10px 0; border: 1px solid #ddd;'>
         <div style='color: #222; font-size: 15px; line-height: 1.6;'>{analysis}</div>
     </div>
     """, unsafe_allow_html=True)
