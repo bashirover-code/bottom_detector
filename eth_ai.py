@@ -10,7 +10,7 @@ import yfinance as yf
 # НАСТРОЙКИ СТРАНИЦЫ И АВТООБНОВЛЕНИЕ
 # ============================================================
 
-st.set_page_config(page_title="Мульти-актив Детектор Дна", layout="wide")
+st.set_page_config(page_title="Асимметричные возможности (детектор дна)", layout="wide")
 
 # Глобальный шрифт Times New Roman
 st.markdown("""
@@ -23,7 +23,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Мульти-актив Детектор Дна")
+st.title("📊 Асимметричные возможности (детектор дна)")
 
 # ============================================================
 # 1. ФИНАЛЬНЫЙ СПИСОК АКТИВОВ
@@ -312,7 +312,6 @@ with col3:
     """, unsafe_allow_html=True)
 
 with col4:
-    # Динамический цвет для сигнала в панели
     st.markdown(f"""
         <div style='background: {signal_color}15; padding: 11px; border-radius: 8px; border: 1px solid {signal_color}40; text-align: center;'>
             <p style='color: gray; margin: 0; font-size: 14px; font-weight: bold;'>СИГНАЛ</p>
@@ -393,11 +392,7 @@ for i in range(len(df_chart) - 1):
         showlegend=False, hoverinfo='skip'
     ))
 
-fig.add_trace(go.Scatter(
-    x=df_chart["date"], y=df_chart["close"],
-    mode='lines', line=dict(color='black', width=1),
-    showlegend=False, hoverinfo='skip', name='_черная_линия'
-))
+# Тонкий черный график удален, как вы и просили. Теперь видна только цветная линия индикатора.
 
 fig.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["close"],
