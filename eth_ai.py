@@ -53,7 +53,7 @@ COINGECKO_IDS = {
 }
 
 # ============================================================
-# 2. ДАННЫЕ О КРИТИЧЕСКИХ ДНЯХ (ИСПЫТАНИЯ РЫНКА)
+# 2. ДАННЫЕ О КРИТИЧЕСКИХ ДНЯХ
 # ============================================================
 
 CRITICAL_DATES = {
@@ -113,7 +113,6 @@ def detect_rsi_divergence(df, lookback=30):
         return False
     sub = df.tail(lookback).copy().reset_index(drop=True)
     
-    # Поиск локальных минимумов цены
     price_mins = []
     for i in range(2, len(sub)-2):
         if sub["close"].iloc[i] < sub["close"].iloc[i-1] and sub["close"].iloc[i] < sub["close"].iloc[i-2] and \
@@ -147,7 +146,7 @@ def get_signal_adaptive(z_score, low, high, is_vet):
         else: return "⚪ БОКОВИК / НЕЙТРАЛЬНО", "#6b7280"
 
 # ============================================================
-# 5. ИСТОРИЧЕСКИЙ АНАЛИЗ УСТОЙЧИВОСТИ (ПАСПОРТ МОНЕТЫ)
+# 5. ИСТОРИЧЕСКИЙ АНАЛИЗ УСТОЙЧИВОСТИ
 # ============================================================
 
 def analyze_stress_tests(df):
@@ -165,7 +164,6 @@ def analyze_stress_tests(df):
     t1_row = df_temp[df_temp["date_str"] == CRITICAL_DATES["test_1"]["date"]]
     if not t1_row.empty:
         p_t1 = t1_row["close"].values[0]
-        # Проверяем цену через 25 дней (восстановление)
         future_t1 = df_temp[df_temp["date"] == (t1_row["date"].values[0] + np.timedelta64(25, 'D'))]
         if not future_t1.empty:
             p_f1 = future_t1["close"].values[0]
@@ -177,7 +175,6 @@ def analyze_stress_tests(df):
     t2_row = df_temp[df_temp["date_str"] == CRITICAL_DATES["test_2"]["date"]]
     if not t2_row.empty:
         p_t2 = t2_row["close"].values[0]
-        # Проверяем цену через 25 дней
         future_t2 = df_temp[df_temp["date"] == (t2_row["date"].values[0] + np.timedelta64(25, 'D'))]
         if not future_t2.empty:
             p_f2 = future_t2["close"].values[0]
@@ -188,7 +185,7 @@ def analyze_stress_tests(df):
     return results
 
 # ============================================================
-# 6. КОМПЛЕКСНЫЙ АДАПТИВНЫЙ РАСЧЁТ
+# 6. ОСНОВНОЙ РАСЧЁТ (ИСПРАВЛЕНА ОШИБКА fillna)
 # ============================================================
 
 def calculate_metrics_adaptive(df):
@@ -197,7 +194,6 @@ def calculate_metrics_adaptive(df):
         
     df = df.copy()
     
-    # Тренды и математическое дно (Z-Score на MA90)
     df["ma90"] = df["close"].rolling(window=90, min_periods=30).mean()
     df["std90"] = df["close"].rolling(window=90, min_periods=30).std()
     df["z_score"] = (df["close"] - df["ma90"]) / (df["std90"] + 1e-10)
@@ -205,14 +201,13 @@ def calculate_metrics_adaptive(df):
     df["rsi"] = calculate_rsi(df, 14)
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     
-    # Объёмный анализ отклонений
     df["v_mean"] = df["volume"].rolling(window=30, min_periods=10).mean()
     df["v_std"] = df["volume"].rolling(window=30, min_periods=10).std()
     df["vol_z"] = (df["volume"] - df["v_mean"]) / (df["v_std"] + 1e-10)
     
-    df = df.fillna(method="bfill").fillna(0)
+    # ИСПРАВЛЕНО: убран method="bfill"
+    df = df.bfill().fillna(0)
     
-    # Текущие экстремумы
     c_price = df["close"].iloc[-1]
     c_z = df["z_score"].iloc[-1]
     c_rsi = df["rsi"].iloc[-1]
@@ -222,7 +217,6 @@ def calculate_metrics_adaptive(df):
     low_t, up_t = get_adaptive_thresholds(df["z_score"].values)
     dv_bull = detect_rsi_divergence(df, 35)
     
-    # Весовая мультифакторная модель вероятности дна
     w_score = 0
     if c_z <= low_t: w_score += 35
     elif c_z < -0.8: w_score += 15
@@ -233,7 +227,7 @@ def calculate_metrics_adaptive(df):
     if c_vol_z >= 2.0 and c_z < 0: w_score += 25
     elif c_vol_z >= 0.8 and c_z < 0: w_score += 10
     
-    if c_price >= c_ma200: w_score += 15  # Запас прочности бычьего рынка
+    if c_price >= c_ma200: w_score += 15
     
     prob = w_score / 100.0
     confidence = min(100, int(len(df) / 450 * 100))
@@ -241,7 +235,7 @@ def calculate_metrics_adaptive(df):
     return df, c_price, c_z, prob, confidence, (low_t, up_t), c_rsi, c_vol_z, dv_bull
 
 # ============================================================
-# 7. ЗАГРУЗКА ДАННЫХ С РЕЗЕРВНЫМ ИСТОЧНИКОМ
+# 7. ЗАГРУЗКА ДАННЫХ
 # ============================================================
 
 @st.cache_data(ttl=600)
@@ -269,6 +263,7 @@ def load_crypto_data(symbol, days=550):
             return df[["date", "close", "volume"]]
     except:
         return None
+    return None
 
 @st.cache_data(ttl=600)
 def load_stock_data(symbol, days=550):
@@ -281,261 +276,195 @@ def load_stock_data(symbol, days=550):
             return df[["date", "close", "volume"]]
     except:
         return None
+    return None
 
 # ============================================================
-# 8. ИНТЕГРАЦИЯ ДЕП СИК
+# 8. AI-АНАЛИЗ (DeepSeek)
 # ============================================================
 
 def call_deepseek_v3(asset, price, z, prob, sig, rsi, vol_z, div, stress, fund):
     key = st.secrets.get("DEEPSEEK_API_KEY", "")
     if not key:
-        return "❌ Ключ интеграции ИИ DeepSeek отсутствует."
+        return "❌ Ключ DeepSeek не найден."
         
     f_text = ""
     if fund:
         f_text = f"Капитализация: ${fund['market_cap']:,.0f}, Объем 24ч: ${fund['volume_24h']:,.0f}, ATH: ${fund['ath']:,.0f}."
         
-    prompt = f"""Проведи глубокий экспресс-анализ {asset}:
-МЕТРИКИ: Цена: ${price:,.4f}, Z-Score к MA90: {z:.2f}, RSI: {rsi:.1f}, Объёмное отклонение: {vol_z:+.1f}σ, Бычья дивергенция RSI: {'ДА' if div else 'НЕТ'}.
-Итоговая вероятность истинного дна системы: {prob*100:.1f}%. Сигнал: {sig}.
-{f_text}
-ИСТОРИЯ СТРЕСС-ТЕСТОВ РЫНКА (10.11.25 и 06.02.26):
-- Результат теста ноября 2025: {stress['t1_status']} ({stress['t1_perf'] if stress['t1_perf'] else 0:.1f}%)
-- Результат теста февраля 2026: {stress['t2_status']} ({stress['t2_perf'] if stress['t2_perf'] else 0:.1f}%)
+    prompt = f"""Проведи анализ {asset}:
+Цена: ${price:,.4f}, Z-Score: {z:.2f}, RSI: {rsi:.1f}, Объём σ: {vol_z:+.1f}, Дивергенция: {'ДА' if div else 'НЕТ'}.
+Вероятность дна: {prob*100:.1f}%. Сигнал: {sig}. {f_text}
+Стресс-тесты: 10.11.25: {stress['t1_status']} ({stress['t1_perf'] if stress['t1_perf'] else 0:.1f}%)
+06.02.26: {stress['t2_status']} ({stress['t2_perf'] if stress['t2_perf'] else 0:.1f}%)
 
-Напиши профессиональный вывод (4-5 предложений) на русском. Оцени: прошёл ли актив проверку на выкупаемость исторически, подтверждено ли дно текущими объемами и дивергенцией, и конкретный торговый план."""
+Напиши краткий вывод (3-4 предложения) на русском."""
 
-    u = "https://api.deepseek.com/v1/chat/completions"
-    h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    d = {
-        "model": "deepseek-chat",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 550, "temperature": 0.4
-    }
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    data = {"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "max_tokens": 500, "temperature": 0.5}
     try:
-        r = requests.post(u, headers=h, json=d, timeout=25)
+        r = requests.post(url, headers=headers, json=data, timeout=25)
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"❌ Ошибка вызова ИИ: {e}"
-    return "❌ Ошибка обработки ответа сервером DeepSeek."
+    except:
+        pass
+    return "❌ Ошибка AI"
 
 # ============================================================
-# 9. СЕНДБАР / ПАНЕЛЬ УПРАВЛЕНИЯ
+# 9. ИНТЕРФЕЙС
 # ============================================================
 
 with st.sidebar:
-    st.header("⚙️ НАСТРОЙКИ СИСТЕМЫ")
-    st.markdown("---")
-    market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
+    st.header("⚙️ НАСТРОЙКИ")
+    market = st.radio("Сектор", ["Криптовалюты", "Фондовый рынок"])
     if market == "Криптовалюты":
-        asset = st.selectbox("Выбор цифрового актива", CRYPTO_LIST)
+        asset = st.selectbox("Актив", CRYPTO_LIST)
     else:
-        asset = st.selectbox("Выбор акции/фонда", STOCK_LIST)
-    st.markdown("---")
-    st.caption("📈 **Математическая модель v3**")
-    st.caption("Интегрированы исторические точки стресс-тестов: 10.11.2025 и 06.02.2026 для оценки долгосрочной живучести активов.")
+        asset = st.selectbox("Актив", STOCK_LIST)
+    st.caption("Математическая модель v3")
+    st.caption("Стресс-тесты: 10.11.2025 и 06.02.2026")
 
-# ============================================================
-# 10. ИНИЦИАЛИЗАЦИЯ И РАСЧЁТ ДАННЫХ
-# ============================================================
-
-is_c = asset in CRYPTO_LIST
-is_v = asset in VETERAN_LIST
+is_crypto = asset in CRYPTO_LIST
+is_veteran = asset in VETERAN_LIST
 
 fund = None
-if is_c and asset in COINGECKO_IDS:
+if is_crypto and asset in COINGECKO_IDS:
     fund = get_coingecko_fundamentals(COINGECKO_IDS[asset])
 
-with st.spinner("Синхронизация потоков данных..."):
-    raw = load_crypto_data(asset) if is_c else load_stock_data(asset)
+with st.spinner("Загрузка..."):
+    raw = load_crypto_data(asset) if is_crypto else load_stock_data(asset)
 
 if raw is None or len(raw) < 90:
-    st.error(f"❌ Недостаточно данных для запуска ядра математического анализа по {asset}.")
+    st.error(f"Недостаточно данных для {asset}")
     st.stop()
 
-df, c_price, c_z, prob, conf, (low_thr, upper_thr), c_rsi, c_vol_z, dv_bull = calculate_metrics_adaptive(raw)
-sig_t, sig_c = get_signal_adaptive(c_z, low_thr, upper_thr, is_v)
+result = calculate_metrics_adaptive(raw)
+if result[0] is None:
+    st.error("Ошибка расчёта метрик")
+    st.stop()
+
+df, price, z, prob, conf, (low, high), rsi, vol_z, div = result
+sig_text, sig_color = get_signal_adaptive(z, low, high, is_veteran)
 stress = analyze_stress_tests(df)
 
-# Вывод основных виджетов
-st.header(f"📊 Паспорт актива: {asset}")
+st.header(f"📊 {asset}")
+
 c1, c2, c3, c4 = st.columns(4)
-with c1: st.metric("💰 ТЕКУЩАЯ ЦЕНА", f"${c_price:,.4f}" if c_price < 1 else f"${c_price:,.2f}")
-with c2: st.metric("📊 Z-SCORE (MA90)", f"{c_z:.2f}")
-with c3:
-    p_c = "#22c55e" if prob >= 0.65 else "#eab308" if prob >= 0.35 else "#ef4444"
-    st.markdown(f"""
-        <div style='background: {p_c}10; padding: 10px; border-radius: 8px; border: 1px solid {p_c}30; text-align: center;'>
-            <p style='color: gray; margin:0; font-size:12px; font-weight:bold;'>ВЕРОЯТНОСТЬ ДНА</p>
-            <p style='color: {p_c}; font-size:22px; font-weight:bold; margin:3px 0 0 0;'>{prob*100:.1f}%</p>
-        </div>
-    """, unsafe_allow_html=True)
-with c4:
-    st.metric("📈 RSI (14)", f"{c_rsi:.1f}", delta="ДИВЕРГЕНЦИЯ ✅" if dv_bull else None, delta_color="inverse")
+with c1: st.metric("💰 ЦЕНА", f"${price:,.2f}" if price > 1 else f"${price:,.4f}")
+with c2: st.metric("📊 Z-SCORE", f"{z:.2f}")
+with c3: st.metric("📈 RSI", f"{rsi:.1f}", delta="Дивергенция ✅" if div else None)
+with c4: st.metric("🎯 ВЕРОЯТНОСТЬ ДНА", f"{prob*100:.1f}%")
 
 st.markdown(f"""
-<div style='background: linear-gradient(135deg, #111827 0%, #1f2937 100%); padding:12px; border-radius:10px; margin: 15px 0; border-left: 5px solid {sig_c};'>
-    <p style='margin:0; color:#f3f4f6; font-size:14px;'>
-        <b>Рекомендация детектора:</b> <span style='color:{sig_c}; font-weight:bold;'>{sig_t}</span> 
-        | Адаптивный коридор нормы: {low_thr:.2f}σ — {upper_thr:.2f}σ
-    </p>
+<div style='background:#111827; padding:12px; border-radius:8px; margin:15px 0; border-left:5px solid {sig_color};'>
+    <b>Сигнал:</b> <span style='color:{sig_color}'>{sig_text}</span>
 </div>
 """, unsafe_allow_html=True)
 
-# Исторический аудит выкупаемости
-st.subheader("🛡️ Результаты стресс-тестов на выкупаемость рынка")
-sc1, sc2 = st.columns(2)
-with sc1:
-    t1_c = "#22c55e" if "✅" in stress["t1_status"] else "#ef4444" if "❌" in stress["t1_status"] else "#6b7280"
-    st.markdown(f"""
-        <div style='background: #111; padding:12px; border-radius:8px; border-top: 3px solid {t1_c};'>
-            <p style='color:gray; font-size:12px; margin:0;'><b>ТЕСТ 10.11.2025 (Дно тарифов Трампа)</b></p>
-            <p style='font-size:16px; font-weight:bold; color:{t1_c}; margin:5px 0 0 0;'>{stress['t1_status']} {f'({stress["t1_perf"]:+.1f}%)' if stress['t1_perf'] else ''}</p>
-        </div>
-    """, unsafe_allow_html=True)
-with sc2:
-    t2_c = "#22c55e" if "✅" in stress["t2_status"] else "#ef4444" if "❌" in stress["t2_status"] else "#6b7280"
-    st.markdown(f"""
-        <div style='background: #111; padding:12px; border-radius:8px; border-top: 3px solid {t2_c};'>
-            <p style='color:gray; font-size:12px; margin:0;'><b>ТЕСТ 06.02.2026 (Глобальная капитуляция)</b></p>
-            <p style='font-size:16px; font-weight:bold; color:{t2_c}; margin:5px 0 0 0;'>{stress['t2_status']} {f'({stress["t2_perf"]:+.1f}%)' if stress['t2_perf'] else ''}</p>
-        </div>
-    """, unsafe_allow_html=True)
+st.subheader("🛡️ СТРЕСС-ТЕСТЫ ВЫКУПАЕМОСТИ")
+col_a, col_b = st.columns(2)
+with col_a:
+    t1c = "#22c55e" if "✅" in stress["t1_status"] else "#ef4444"
+    st.markdown(f"**10.11.2025**<br><span style='color:{t1c}'>{stress['t1_status']}</span>", unsafe_allow_html=True)
+with col_b:
+    t2c = "#22c55e" if "✅" in stress["t2_status"] else "#ef4444"
+    st.markdown(f"**06.02.2026**<br><span style='color:{t2c}'>{stress['t2_status']}</span>", unsafe_allow_html=True)
 
-# ============================================================
-# ИИ ВЫВОД
-# ============================================================
 st.markdown("---")
-if st.button("🧠 Запустить нейросетевой аудит DeepSeek v3", type="primary"):
-    with st.spinner("Нейросеть считывает маркеры устойчивости..."):
-        ai_res = call_deepseek_v3(asset, c_price, c_z, prob, sig_t, c_rsi, c_vol_z, dv_bull, stress, fund)
-    st.markdown(f"""
-        <div style='background:#0f172a; padding:18px; border-radius:12px; border:1px solid #1e293b; margin:10px 0;'>
-            <h5 style='color:#38bdf8; margin-top:0;'>🤖 Аналитическое заключение DeepSeek ИИ:</h5>
-            <p style='color:#e2e8f0; line-height:1.6; font-size:14px; margin:0;'>{ai_res}</p>
-        </div>
-    """, unsafe_allow_html=True)
+if st.button("🤖 AI-АНАЛИЗ (DeepSeek)"):
+    with st.spinner("DeepSeek анализирует..."):
+        analysis = call_deepseek_v3(asset, price, z, prob, sig_text, rsi, vol_z, div, stress, fund)
+    st.info(analysis)
 
 # ============================================================
-# 11. ГРАФИКИ
+# 10. ГРАФИКИ
 # ============================================================
-st.markdown("---")
-st.subheader("📈 ГРАФИК ЦЕНЫ (цвет = Z-Score к MA90)")
 
+st.subheader("📈 ГРАФИК ЦЕНЫ + MA90 + MA200")
 df_chart = df.tail(500).copy()
 
-def get_color(z, lower, upper):
-    if z <= lower: return "#00ff66"
-    elif z <= lower*0.5: return "#39ff14"
-    elif z <= -0.5: return "#bfff00"
-    elif z <= 0.5: return "#e5e7eb"
-    elif z <= 1.2: return "#ffb703"
-    elif z <= upper: return "#ff5500"
+def get_color(z_val, low_val, high_val):
+    if z_val <= low_val: return "#00ff66"
+    elif z_val <= low_val * 0.6: return "#39ff14"
+    elif z_val <= -0.5: return "#bfff00"
+    elif z_val <= 0.5: return "#e5e7eb"
+    elif z_val <= 1.2: return "#ffb703"
+    elif z_val <= high_val: return "#ff5500"
     else: return "#ff0055"
 
 fig = go.Figure()
-
-for i in range(len(df_chart) - 1):
-    color = get_color(df_chart["z_score"].iloc[i], lower_thr, upper_thr)
+for i in range(len(df_chart)-1):
+    col = get_color(df_chart["z_score"].iloc[i], low, high)
     fig.add_trace(go.Scatter(
         x=[df_chart["date"].iloc[i], df_chart["date"].iloc[i+1]],
         y=[df_chart["close"].iloc[i], df_chart["close"].iloc[i+1]],
-        mode="lines", line=dict(color=color, width=3.5),
-        showlegend=False, hoverinfo="skip"
+        mode="lines", line=dict(color=col, width=3.5), showlegend=False, hoverinfo="skip"
     ))
 
 if "ma90" in df_chart.columns:
-    fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma90"], mode="lines", name="MA90", line=dict(color="#ffffff", width=1.2, dash="dot"), opacity=0.5))
+    fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma90"], mode="lines", name="MA90", line=dict(color="white", width=1.2, dash="dot"), opacity=0.5))
 if "ma200" in df_chart.columns:
     fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma200"], mode="lines", name="MA200", line=dict(color="#f59e0b", width=1.5, dash="dash"), opacity=0.7))
 
-# ИСПРАВЛЕНИЕ ОШИБКИ ВЫЧИСЛЕНИЯ СТРОКИ ШАБЛОНА ПОДСКАЗКИ HINTS
-hover_texts = []
-for d, p, z, r, v in zip(df_chart["date"], df_chart["close"], df_chart["z_score"], df_chart["rsi"], df_chart["vol_z"]):
-    formatted_price = f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
-    text_item = (
-        f"📅 <b>{d.strftime('%Y-%m-%d')}</b><br>"
-        f"💰 <b>${formatted_price}</b><br>"
-        f"📊 Z(MA90): <b>{z:.2f}</b><br>"
-        f"📈 RSI: <b>{r:.1f}</b><br>"
-        f"📦 Объём σ: <b>{v:.2f}</b>"
-    )
-    hover_texts.append(text_item)
-
-fig.add_trace(go.Scatter(
-    x=df_chart["date"], y=df_chart["close"],
-    mode="markers", marker=dict(color="rgba(0,0,0,0)", size=1),
-    hoverinfo="text",
-    text=hover_texts,
-    name="Инфо", hovertemplate="%{text}<extra></extra>"
-))
+hover_list = []
+for d, p, z_val, r_val, v_val in zip(df_chart["date"], df_chart["close"], df_chart["z_score"], df_chart["rsi"], df_chart["vol_z"]):
+    p_str = f"{p:,.2f}" if p > 1 else f"{p:,.4f}"
+    hover_list.append(f"📅 {d.strftime('%Y-%m-%d')}<br>💰 ${p_str}<br>📊 Z: {z_val:.2f}<br>📈 RSI: {r_val:.1f}<br>📦 Объём σ: {v_val:.2f}")
+fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["close"], mode="markers", marker=dict(color="rgba(0,0,0,0)", size=1), hoverinfo="text", text=hover_list, name="Инфо"))
 
 price_range = df_chart["close"].max() / (df_chart["close"].min() + 1e-10)
-fig.update_layout(height=480, template="plotly_dark", xaxis_title="", yaxis_title="Цена (USD)", yaxis_type="log" if price_range > 5 else "linear", hovermode="x unified", legend=dict(orientation="h", y=1.02, x=0), font=dict(family="Times New Roman", size=13))
+fig.update_layout(height=450, template="plotly_dark", yaxis_type="log" if price_range > 5 else "linear", hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
 
-# Раздел Z-Score
+st.subheader("📉 Z-SCORE + АДАПТИВНЫЕ ПОРОГИ")
 fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["z_score"], mode="lines", name="Z-Score", line=dict(color="#00d4ff", width=2), fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.05)"))
-fig2.add_hline(y=lower_thr, line_dash="dash", line_color="#22c55e", annotation_text=f"ДНО ({lower_thr:.2f}σ)")
-fig2.add_hline(y=upper_thr, line_dash="dash", line_color="#ef4444", annotation_text=f"ПИК ({upper_thr:.2f}σ)")
-fig2.update_layout(height=240, template="plotly_dark", yaxis_range=[-3.5, 3.5], font=dict(family="Times New Roman", size=13))
+fig2.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["z_score"], mode="lines", name="Z-Score", line=dict(color="#00d4ff", width=2), fill="tozeroy", fillcolor="rgba(0,212,255,0.05)"))
+fig2.add_hline(y=low, line_dash="dash", line_color="#22c55e", annotation_text=f"ДНО ({low:.2f}σ)")
+fig2.add_hline(y=high, line_dash="dash", line_color="#ef4444", annotation_text=f"ПИК ({high:.2f}σ)")
+fig2.update_layout(height=250, template="plotly_dark", yaxis_range=[-3.5, 3.5])
 st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================
-# 12. СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ
+# 11. СВОДНАЯ ТАБЛИЦА
 # ============================================================
+
 st.markdown("---")
-st.subheader("📋 СВОДНАЯ МАТРИЦА АКТИВОВ")
+st.subheader("📋 СВОДНАЯ ТАБЛИЦА")
 
 @st.cache_data(ttl=300)
-def build_summary_table():
+def build_summary():
     all_assets = {**{c: "Криптовалюта" for c in CRYPTO_LIST}, **{s: "Акция" for s in STOCK_LIST}}
     rows = []
-    for symbol, atype in all_assets.items():
-        df_t = load_crypto_data(symbol) if atype == "Криптовалюта" else load_stock_data(symbol)
-        if df_t is None or len(df_t) < 30:
+    for sym, typ in all_assets.items():
+        dft = load_crypto_data(sym) if typ == "Криптовалюта" else load_stock_data(sym)
+        if dft is None or len(dft) < 30:
             continue
-        res = calculate_metrics_adaptive(df_t)
+        res = calculate_metrics_adaptive(dft)
         if res[0] is None:
             continue
-        (_, price, z, prob, conf, (lt, ut), rsi_v, vol_z, dv_bull) = res
-        sig, _ = get_signal_adaptive(z, lt, ut, symbol in VETERAN_LIST)
-        st_res = analyze_stress_tests(df_t)
-        
-        r1s = "—" if "Нет" in st_res["t1_status"] else "✅" if "Прошёл" in st_res["t1_status"] else "❌"
-        r2s = "—" if "Нет" in st_res["t2_status"] else "✅" if "Прошёл" in st_res["t2_status"] else "❌"
-        r1p = st_res["t1_perf"]
-        r2p = st_res["t2_perf"]
-        
+        _, pr, zz, prb, _, (lt, ut), rs, vz, dv = res
+        sg, _ = get_signal_adaptive(zz, lt, ut, sym in VETERAN_LIST)
+        sts = analyze_stress_tests(dft)
+        t1r = "✅" if "Прошёл" in sts["t1_status"] else ("❌" if "Не восст" in sts["t1_status"] else "—")
+        t2r = "✅" if "Прошёл" in sts["t2_status"] else ("❌" if "Не восст" in sts["t2_status"] else "—")
         rows.append({
-            "Символ": symbol,
-            "Тип": atype,
-            "Цена": f"${price:,.4f}" if price < 1 else f"${price:,.2f}",
-            "Z-Score": f"{z:.2f}",
-            "RSI": f"{rsi_v:.1f}",
-            "Div RSI": "✅" if dv_bull else "—",
-            "Объём σ": f"{vol_z:.2f}",
-            "Вер-ть дна": f"{prob*100:.1f}%",
-            "Сигнал": sig.split(" ")[1] if " " in sig else sig,
-            "Дно 10.11.25": f"{r1s} ({r1p:+.0f}%)" if r1p is not None else r1s,
-            "Дно 06.02.26": f"{r2s} ({r2p:+.0f}%)" if r2p is not None else r2s,
+            "Символ": sym, "Тип": typ, "Цена": f"${pr:,.2f}" if pr > 1 else f"${pr:,.4f}",
+            "Z": f"{zz:.2f}", "RSI": f"{rs:.1f}", "Вер-ть": f"{prb*100:.1f}%",
+            "Сигнал": sg.split()[1] if len(sg.split()) > 1 else sg,
+            "Тест 10.11": t1r, "Тест 06.02": t2r
         })
     return rows
 
-with st.spinner("Загрузка сводной таблицы..."):
-    summary = build_summary_table()
-
-if summary:
-    st.dataframe(pd.DataFrame(summary), use_container_width=True, hide_index=True)
-    st.caption("❌ Не восстановился после дна → кандидат на выход | ✅ Восстановился → прошёл тест выкупаемости")
+with st.spinner("Загрузка таблицы..."):
+    summ = build_summary()
+if summ:
+    st.dataframe(pd.DataFrame(summ), use_container_width=True, hide_index=True)
 
 # ============================================================
-# 13. ПОДВАЛ
+# 12. ПОДВАЛ
 # ============================================================
+
 moscow_tz = timezone(timedelta(hours=3))
 moscow_time = datetime.now(moscow_tz)
-
 st.markdown("---")
-st.caption(f"📅 Время обновления расчётов: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Версия Детектора: v3.0 (Матричный скоринг + Паспорт устойчивости)")
+st.caption(f"Обновлено: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Детектор v3.0")
