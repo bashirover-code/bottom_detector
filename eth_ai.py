@@ -528,11 +528,11 @@ if st.button(f"📊 Получить AI-анализ для {selected_asset}", t
     </div>""", unsafe_allow_html=True)
 
 # ============================================================
-# 11. ГРАФИКИ
+# 11. ГРАФИКИ (ИСПРАВЛЕННЫЙ БЛОК)
 # ============================================================
 
 st.markdown("---")
-st.subheader("📈 ГРАФИК ЦЕНЫ (цвет = Z-Score к MA90)")
+st.subheader("% ГРАФИК ЦЕНЫ (цвет = Z-Score к MA90)")
 
 df_chart = df.tail(500).copy()
 
@@ -575,20 +575,25 @@ if "ma200" in df_chart.columns:
         opacity=0.7
     ))
 
-# Hover-слой
+# ИСПРАВЛЕНИЕ: Предварительно форматируем массив цен, избегая ломаной f-строки
+hover_texts = []
+for d, p, z, r, v in zip(df_chart["date"], df_chart["close"], df_chart["z_score"], df_chart["rsi"], df_chart["vol_z"]):
+    formatted_price = f"{p:,.4f}" if p < 1 else f"{p:,.2f}"
+    text_item = (
+        f"📅 <b>{d.strftime('%Y-%m-%d')}</b><br>"
+        f"💰 <b>${formatted_price}</b><br>"
+        f"📊 Z(MA90): <b>{z:.2f}</b><br>"
+        f"📈 RSI: <b>{r:.1f}</b><br>"
+        f"📦 Объём σ: <b>{v:.2f}</b>"
+    )
+    hover_texts.append(text_item)
+
+# Hover-слой с чистым массивом строк
 fig.add_trace(go.Scatter(
     x=df_chart["date"], y=df_chart["close"],
     mode="markers", marker=dict(color="rgba(0,0,0,0)", size=1),
     hoverinfo="text",
-    text=[f"📅 <b>{d.strftime('%Y-%m-%d')}</b><br>"
-          f"💰 <b>${p:,.4f if p<1 else p:,.2f}</b><br>"
-          f"📊 Z(MA90): <b>{z:.2f}</b><br>"
-          f"📈 RSI: <b>{r:.1f}</b><br>"
-          f"📦 Объём σ: <b>{v:.2f}</b>"
-          for d, p, z, r, v in zip(
-              df_chart["date"], df_chart["close"],
-              df_chart["z_score"], df_chart["rsi"], df_chart["vol_z"]
-          )],
+    text=hover_texts,
     name="Инфо", hovertemplate="%{text}<extra></extra>"
 ))
 
