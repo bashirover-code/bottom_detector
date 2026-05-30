@@ -111,13 +111,19 @@ BOTTOM_ZONES = {
     "LIT": (65.0, 72.0), "SIL": (65.0, 75.0), "EWW": (70.0, 73.0)
 }
 
-# Глобальный аудит весов при компиляции модуля
-assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не сходятся!"
+# Валидация весов на уровне компиляции модуля
+assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не равны 100!"
 assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отдельного актива не равны 1.0!"
 
 # ============================================================
-# ЗАГРУЗЧИК БИРЖЕВЫХ ДАННЫХ
+# РАБОТА С СЕТЬЮ И КЭШИРОВАНИЕМ
 # ============================================================
+
+def _fetch_raw_yfinance(symbol, ticker_suffix, days):
+    """НЕкэшируемая функция. Сон выполняется строго здесь при реальном сетевом запросе (Проблема №1)"""
+    time.sleep(0.35)
+    s = yf.Ticker(f"{symbol}{ticker_suffix}")
+    return s.history(period=f"{days}d")
 
 @st.cache_data(ttl=900)
 def load_asset_data(symbol, days=1500):
@@ -127,8 +133,7 @@ def load_asset_data(symbol, days=1500):
         
     ticker_suffix = "-USD" if meta["type"] == "Криптовалюта" else ""
     try:
-        s = yf.Ticker(f"{symbol}{ticker_suffix}")
-        df = s.history(period=f"{days}d")
+        df = _fetch_raw_yfinance(symbol, ticker_suffix, days)
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
@@ -161,7 +166,7 @@ def calculate_single_rs(df_t, btc_t, lookup_days):
     return 0.0
 
 # ============================================================
-# МАКРО-МОДУЛЬ РЫНКА
+# РАСЧЕТ ИНДЕКСОВ И МАТРИЦЫ
 # ============================================================
 
 def build_macro_bottom_index(volume_perf_data):
@@ -224,10 +229,6 @@ def build_macro_bottom_index(volume_perf_data):
             "Alt Outperformance (60d)": f"{altseason_ratio:.1f}% [+{alt_score}]"
         }
     }
-
-# ============================================================
-# МАТЕМАТИЧЕСКИЙ МАТРИЧНЫЙ СКОРИНГ
-# ============================================================
 
 def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=None):
     zone = BOTTOM_ZONES.get(symbol)
@@ -323,26 +324,29 @@ def calculate_historical_rating(symbol, df, btc_df, macro_score):
     
     return res_hist[6] if res_hist[6] is not None else 50.0
 
-# ============================================================
-# ПОТОК ЗАПРОСОВ К API YAHOO FINANCE С ЗАЩИТОЙ ОТ БАНОВ
-# ============================================================
-
 @st.cache_data(ttl=900)
 def fetch_all_market_dfs():
+    """Чистая кэшируемая функция сборщика. Задержка теперь отрабатывает внутри загрузчиков (Проблема №1)"""
     loaded_data = {}
     for sym in ASSET_REGISTRY.keys():
         df = load_asset_data(sym)
-        time.sleep(0.35)  # Сон вынесен из кэшируемой функции сюда
         if df is not None and len(df) >= 200:
             loaded_data[sym] = df
     return loaded_data
 
 # ============================================================
-# СИНХРОНИЗАЦИЯ СТЕКА ДАННЫХ И СЕССИИ
+# СИНХРОНИЗАЦИЯ СТЕКА ДАННЫХ И СЕССИИ С УЧЕТОМ TTL (Проблема №3)
 # ============================================================
 
 with st.spinner("Синхронизация и глубокий анализ биржевых стаканов..."):
     all_dfs = fetch_all_market_dfs()
+
+# Автоматическая инвалидация session_state при превышении TTL кэша (900 секунд)
+current_time_ts = time.time()
+if "df_market_ts" in st.session_state:
+    if (current_time_ts - st.session_state["df_market_ts"]) > 900:
+        st.session_state.pop("macro_package", None)
+        st.session_state.pop("df_market", None)
 
 if "macro_package" not in st.session_state:
     total_alt_volume = 0.0
@@ -407,6 +411,7 @@ def build_global_market_state(market_dfs, macro_score):
 
 if "df_market" not in st.session_state:
     st.session_state["df_market"] = build_global_market_state(all_dfs, current_macro_score)
+    st.session_state["df_market_ts"] = current_time_ts  # Метка времени записи данных (Проблема №3)
 
 df_market = st.session_state["df_market"]
 
@@ -451,14 +456,22 @@ if not df_market.empty:
         st.info("Рынок локально перегрет либо находится в фазе жесткой капитуляции. Безопасные точки входа отсутствуют.")
 
 # ============================================================
-# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ (СИНХРОНИЗИРОВАНО С КИРИЛЛИЦЕЙ)
+# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ И КНОПКА СБРОСА КЭША (Проблема №2)
 # ============================================================
 
 with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
+    
+    # Кнопка ручного обновления кэша и сессии
+    if st.button("🔄 Обновить данные", use_container_width=True):
+        for key in ["df_market", "macro_package", "df_market_ts"]:
+            st.session_state.pop(key, None)
+        st.cache_data.clear()
+        st.rerun()
+        
+    st.markdown("---")
     user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    # Исправлена ошибка KeyError: "Risk" -> заменено на кириллический ключ "Риск"
     allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
@@ -558,4 +571,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Все регистры и ключи таблиц успешно синхронизированы.")
+st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Сетевой троттлинг изолирован | TTL сессии и кэша синхронизированы на 900с | Ручной сброс активен.")
