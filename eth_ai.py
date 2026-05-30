@@ -467,7 +467,11 @@ with sc2:
 st.markdown("---")
 if st.button("🧠 Запустить нейросетевой аудит DeepSeek v3", type="primary"):
     with st.spinner("Нейросеть сканирует профили рисков токеномики и просадки..."):
-        ai_res = call_deepseek_v3(asset, c_price, c_z, bottom_score, sig_t, c_rsi, c_vol_z, dv_bull, stress, fund, drawdown_pct, market_regime, fdv_risk)
+        ai_res = call_deepseek_v3(
+            asset=asset, price=c_price, z=c_z, bottom_score=bottom_score, sig=sig_t, 
+            rsi=c_rsi, vol_z=c_vol_z, div=dv_bull, stress=stress, fund=fund, 
+            drawdown=drawdown_pct, regime=market_regime, fdv_risk=fdv_risk
+        )
     st.markdown(f"""
         <div style='background:#0f172a; padding:18px; border-radius:12px; border:1px solid #1e293b; margin:10px 0;'>
             <h5 style='color:#38bdf8; margin-top:0;'>🤖 Аналитическое заключение DeepSeek ИИ:</h5>
