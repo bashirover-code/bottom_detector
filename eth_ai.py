@@ -40,37 +40,11 @@ STOCK_LIST = [
 ]
 
 # ============================================================
-# ИНТЕРФЕЙС УПРАВЛЕНИЯ И ВЫБОР ИСТОРИЧЕСКОЙ ДАТЫ
+# 2. ЗАГРУЗКА ДАННЫХ В РЕАЛЬНОМ ВРЕМЕНИ
 # ============================================================
 
-with st.sidebar:
-    st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
-    st.markdown("---")
-    market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
-    asset = st.selectbox("Выбор актива", CRYPTO_LIST if market == "Криптовалюты" else STOCK_LIST)
-    st.markdown("---")
-    
-    # Внедрение Walk-Forward Тестирования по ТЗ
-    test_date = st.date_input(
-        "Историческая дата",
-        value=datetime.today(),
-        max_value=datetime.today()
-    )
-    # Превращаем в Timestamp для точной фильтрации pandas
-    ts_test_date = pd.Timestamp(test_date)
-    
-    st.markdown("---")
-    st.caption("🏛️ **Инвестиционный анализ**")
-    st.caption("• Включен режим Walk-Forward тестирования.")
-    st.caption("• Все индикаторы рассчитываются «заочно» на выбранную дату.")
-
-# ============================================================
-# 2. ЗАГРУЗКА ДАННЫХ (С ФИЛЬТРАЦИЕЙ ПО ВРЕМЕНИ)
-# ============================================================
-
-# Добавляем ts_test_date в кэш, чтобы при смене даты данные пересчитывались корректно
 @st.cache_data(ttl=900)
-def load_crypto_data(symbol, ts_date, days=550):
+def load_crypto_data(symbol, days=550):
     if "CRYPTOCOMPARE_KEY" in st.secrets:
         try:
             key = st.secrets["CRYPTOCOMPARE_KEY"]
@@ -81,9 +55,7 @@ def load_crypto_data(symbol, ts_date, days=550):
                 df = pd.DataFrame(res.json()["Data"]["Data"])
                 df["date"] = pd.to_datetime(df["time"], unit='s')
                 df = df.rename(columns={"volumeto": "volume"})
-                df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-                # Walk-Forward срез
-                return df[df["date"] <= ts_date].reset_index(drop=True)
+                return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
         except:
             pass
             
@@ -93,29 +65,25 @@ def load_crypto_data(symbol, ts_date, days=550):
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-            # Walk-Forward срез
-            return df[df["date"] <= ts_date].reset_index(drop=True)
+            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
     except:
         return None
 
 @st.cache_data(ttl=900)
-def load_stock_data(symbol, ts_date, days=550):
+def load_stock_data(symbol, days=550):
     try:
         s = yf.Ticker(symbol)
         df = s.history(period=f"{days}d")
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-            # Walk-Forward срез
-            return df[df["date"] <= ts_date].reset_index(drop=True)
+            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
     except:
         return None
 
 @st.cache_data(ttl=900)
-def get_market_regime(ts_date):
-    btc_df = load_crypto_data("BTC", ts_date, days=300)
+def get_market_regime():
+    btc_df = load_crypto_data("BTC", days=300)
     if btc_df is not None and len(btc_df) >= 200:
         btc_df["ma200"] = btc_df["close"].rolling(window=200).mean()
         btc_price = btc_df["close"].iloc[-1]
@@ -160,12 +128,12 @@ def calculate_single_rs(df, btc_df, lookup_days):
     return 0.0
 
 # ============================================================
-# 4. ДВУХФАКТОРНАЯ МОДЕЛЬ С АВТОМАТИЧЕСКИМ ФИЛЬТРОМ МУСОРА
+# 4. ДВУХФАКТОРНАЯ МОДЕЛЬ (ОБНОВЛЕННЫЕ ВЕСА И ПРЕМИИ)
 # ============================================================
 
 def calculate_two_factor_matrix(symbol, df, btc_df=None):
     if df is None or len(df) < 200:
-        return (None,) * 21
+        return (None,) * 20
         
     df = df.copy()
     
@@ -214,7 +182,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     elif relative_strength > -20: rs_score = 40
     else: rs_score = 10
     
-    # Внутренний расчет Recovery Score
     cycle_low = df["close"].tail(365).min()
     recovery_score = (((current_price - cycle_low) / (current_ath - cycle_low)) * 100) if (current_ath - cycle_low) > 0 else 0.0
 
@@ -228,7 +195,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     if c_ma200 > ma200_30_days_ago: structure_raw += 10
     structure_score = int((structure_raw / 35) * 100) if structure_raw > 0 else 0
 
-    # ФАКТОР 4: ИНДИКАТОРЫ ДНА (Локальный страх)
+    # ФАКТОР 4: ИНДИКАТОРЫ ДНА
     bottom_score = 0
     if drawdown_pct <= -70: bottom_score += 40
     elif drawdown_pct <= -45: bottom_score += 20
@@ -237,32 +204,42 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     if c_z <= low_t: bottom_score += 20
     bottom_score = min(bottom_score, 100)
 
-    # Компоненты Opportunity Score
+    # Предварительный базовый расчет Итогового качества
+    quality_rating = (0.45 * quality_vol_score) + (0.35 * strength_score) + (0.20 * structure_score)
+    
+    # ============================================================
+    # УЛУЧШЕНИЕ 1: ПРЕМИЯ ЗА ЛИДЕРСТВО ПО ТЗ (ДЛЯ NEAR И ДР.)
+    # ============================================================
+    if relative_strength > 50:
+        quality_rating += 15
+        reasons_checklist.append(("🚀 Премия лидера: Сила к BTC > 50%. Начислено +15 к Качеству.", True))
+    elif relative_strength > 30:
+        quality_rating += 10
+        reasons_checklist.append(("🔥 Премия лидера: Сила к BTC > 30%. Начислено +10 к Качеству.", True))
+
+    # ============================================================
+    # УЛУЧШЕНИЕ 2: НОВАЯ СБАЛАНСИРОВАННАЯ ФОРМУЛА OPPORTUNITY SCORE
+    # ============================================================
     drawdown_score = min(100, abs(drawdown_pct) * 1.11)
-    rs_recovery_score = max(0, min(100, rs_score * (1 - (recovery_score / 100))))
     
-    recent_z = df["z_score"].tail(60).values
-    accumulation_days = np.sum(recent_z < 0.2)
-    accumulation_score = (accumulation_days / 60) * 100
-    
-    opportunity_score = (0.4 * drawdown_score) + (0.3 * rs_recovery_score) + (0.3 * accumulation_score)
+    # opportunity = 0.5 * drawdown_score + 0.2 * rs_score + 0.3 * quality_score
+    opportunity_score = (0.5 * drawdown_score) + (0.2 * rs_score) + (0.3 * quality_rating)
     opportunity_score = max(0, min(opportunity_score, 100))
 
-    # Первичный базовый расчет рейтингов
-    quality_rating = (0.45 * quality_vol_score) + (0.35 * strength_score) + (0.20 * structure_score)
+    # Расчет финального Потенциала входа
     entry_rating = (0.60 * opportunity_score) + (0.40 * bottom_score)
     
     # Защитный коэффициент даунтренда
     if structure_raw == 0:
         entry_rating *= 0.85
-        reasons_checklist.append(("⚠️ Потенциал ограничен: Покупка ведется против сильного нисходящего макро-тренда", False))
+        reasons_checklist.append(("⚠️ Потенциал ограничен: Макро-тренд нисходящий", False))
 
     if avg_dollar_volume < 1_000_000:
         quality_rating *= 0.7
         entry_rating *= 0.7
         reasons_checklist.append(("🚨 Фильтр ликвидности: Долларовый оборот < $1М. Штраф ×0.7", False))
 
-    # Жесткая каскадная фильтрация мусора
+    # Фильтр мусора по Качеству
     if quality_rating < 20:
         entry_rating *= 0.5
         reasons_checklist.append(("❌ Жесткий фильтр: Крайне низкое Качество (<20). Потенциал урезан в 2 раза.", False))
@@ -291,41 +268,52 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     elif current_price > c_ma90 and current_price > c_ma200:
         if c_rsi > 72 or c_z > up_t: cycle_stage = "Перегрев"
         elif c_ma200 > ma200_30_days_ago and c_rsi > 58: cycle_stage = "Тренд"
-        else: cycle_stage = "Ранний trend"
+        else: cycle_stage = "Ранний тренд"
     elif current_price > c_ma90 and (recovery_score > 15 or c_z > 0.5):
         cycle_stage = "Разворот"
     else:
         cycle_stage = "Накопление"
 
-    return df, current_price, c_z, quality_rating, entry_rating, (low_t, up_t), c_rsi, drawdown_pct, relative_strength, current_ath, avg_dollar_volume, strength_score, recovery_score, opportunity_score, drawdown_score, rs_recovery_score, accumulation_score, cycle_stage, liq_risk, reasons_checklist, decision
+    return df, current_price, c_z, quality_rating, entry_rating, (low_t, up_t), c_rsi, drawdown_pct, relative_strength, current_ath, avg_dollar_volume, strength_score, opportunity_score, drawdown_score, rs_score, cycle_stage, liq_risk, reasons_checklist, decision
 
 # ============================================================
-# ВЫПОЛНЕНИЕ РАСЧЕТОВ
+# ИНТЕРФЕЙС ПАНЕЛИ УПРАВЛЕНИЯ
 # ============================================================
+
+with st.sidebar:
+    st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
+    st.markdown("---")
+    market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
+    asset = st.selectbox("Выбор актива", CRYPTO_LIST if market == "Криптовалюты" else STOCK_LIST)
+    st.markdown("---")
+    st.caption("🏛️ **Инвестиционный анализ**")
+    st.caption("• Внедрена формула Opportunity с весом Качества (30%).")
+    st.caption("• Интегрирована шкала автоматических премий за лидерство к BTC.")
 
 with st.spinner("Расчет макро-показателей рынка..."):
-    market_regime = get_market_regime(ts_test_date)
-    btc_global_df = load_crypto_data("BTC", ts_test_date, days=550)
+    market_regime = get_market_regime()
+    btc_global_df = load_crypto_data("BTC", days=550)
 
 is_c = asset in CRYPTO_LIST
-with st.spinner(f"Анализ весов для {asset}..."):
-    raw = load_crypto_data(asset, ts_test_date) if is_c else load_stock_data(asset, ts_test_date)
+with st.spinner(f"Синхронизация данных для {asset}..."):
+    raw = load_crypto_data(asset) if is_c else load_stock_data(asset)
 
 if raw is None or len(raw) < 200:
-    st.error(f"❌ Недостаточно исторических данных для анализа {asset} на дату {test_date}. Выберите более позднюю точку.")
+    st.error(f"❌ Недостаточно данных для анализа {asset}.")
     st.stop()
 
 # Распаковка расчетов
-df, c_price, c_z, q_rating, e_rating, (low_thr, upper_thr), c_rsi, drawdown_pct, rel_strength, current_ath, dollar_vol, strength_s, recovery_score, opportunity_score, dd_s, rs_rec_s, accum_s, cycle_stage, liq_risk, reasons, main_decision = calculate_two_factor_matrix(asset, raw, btc_global_df if is_c else None)
+df, c_price, c_z, q_rating, e_rating, (low_thr, upper_thr), c_rsi, drawdown_pct, rel_strength, current_ath, dollar_vol, strength_s, opportunity_score, dd_s, rs_s, cycle_stage, liq_risk, reasons, main_decision = calculate_two_factor_matrix(asset, raw, btc_global_df if is_c else None)
 
 # ============================================================
 # ВЫВОД КАРТОЧЕК И СПЕЦИФИКАЦИЙ
 # ============================================================
 
-st.header(f"📊 Спецификация актива: {asset} (Данные на {test_date.strftime('%Y-%m-%d')})")
+# Изменено название по ТЗ
+st.header(f"📊 актив: {asset}")
 
 c1, c2, c3, c4, c5 = st.columns(5)
-with c1: st.metric("💰 ИСТОРИЧЕСКАЯ ЦЕНА", f"${c_price:,.4f}" if c_price < 1 else f"${c_price:,.2f}")
+with c1: st.metric("💰 ТЕКУЩАЯ ЦЕНА", f"${c_price:,.4f}" if c_price < 1 else f"${c_price:,.2f}")
 with c2: 
     q_color = "#22c55e" if q_rating >= 70 else "#eab308" if q_rating >= 45 else "#ef4444"
     st.markdown(f"<div style='background: {q_color}10; padding: 10px; border-radius: 8px; border: 1px solid {q_color}30; text-align: center;'><p style='color: gray; margin:0; font-size:10px; font-weight:bold;'>ИТОГОВОЕ КАЧЕСТВО</p><p style='color: {q_color}; font-size:20px; font-weight:bold; margin:3px 0 0 0;'>{q_rating:.1f}</p></div>", unsafe_allow_html=True)
@@ -338,10 +326,10 @@ with c5: st.metric("📈 SMART OPPORTUNITY", f"{opportunity_score:.1f}")
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #0b0f19 0%, #111827 100%); padding:12px; border-radius:10px; margin: 15px 0; border: 1px solid #1f2937;'>
     <p style='margin:0; color:#f3f4f6; font-size:13px; text-align: center;'>
-        <b>Декомпозиция индикатора Opportunity (на исторический момент):</b> &nbsp;&nbsp;
-        Просадка (40%): <span style='color:#38bdf8; font-weight:bold;'>{dd_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
-        RS Отскок (30%): <span style='color:#fb923c; font-weight:bold;'>{rs_rec_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
-        Дни Накопления (30%): <span style='color:#a855f7; font-weight:bold;'>{accum_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
+        <b>Декомпозиция Opportunity Score по ТЗ:</b> &nbsp;&nbsp;
+        Просадка (50%): <span style='color:#38bdf8; font-weight:bold;'>{dd_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
+        Сила к рынку (20%): <span style='color:#fb923c; font-weight:bold;'>{rs_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
+        Итоговое Качество (30%): <span style='color:#a855f7; font-weight:bold;'>{q_rating:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         <b>Стадия макроцикла:</b> <span style='font-weight:bold; color:#eab308;'>{cycle_stage}</span>
     </p>
 </div>
@@ -351,7 +339,7 @@ if reasons:
     for item in reasons: st.markdown(f"- {item[0]}")
 
 # ============================================================
-# 5. ГРАФИК ЦЕНЫ АКТИВА
+# 5. ГРАФИК ЦЕНЫ
 # ============================================================
 st.markdown("---")
 df_chart = df.tail(500).copy()
@@ -361,25 +349,26 @@ fig.update_layout(height=350, template="plotly_dark", xaxis_title="", yaxis_titl
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (НА ВЫБРАННУЮ ДАТУ)
+# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (ОПТИМИЗИРОВАННАЯ)
 # ============================================================
 st.markdown("---")
-st.subheader(f"📋 СКВОЗНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ НА {test_date.strftime('%Y-%m-%d')}")
+st.subheader("📋 СКВОЗНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ")
 
 @st.cache_data(ttl=900)
-def build_summary_table(regime, ts_date):
+def build_summary_table(regime):
     all_assets = {**{c: "Криптовалюта" for c in CRYPTO_LIST}, **{s: "Акция" for s in STOCK_LIST}}
     rows = []
-    btc_df = load_crypto_data("BTC", ts_date, days=550)
+    btc_df = load_crypto_data("BTC", days=550)
     
     for symbol, atype in all_assets.items():
-        df_t = load_crypto_data(symbol, ts_date) if atype == "Криптовалюта" else load_stock_data(symbol, ts_date)
+        df_t = load_crypto_data(symbol) if atype == "Криптовалюта" else load_stock_data(symbol)
         if df_t is None or len(df_t) < 200: continue
             
         res = calculate_two_factor_matrix(symbol, df_t, btc_df if atype == "Криптовалюта" else None)
         if res[0] is None: continue
             
-        (_, _, _, quality_r, entry_r, _, _, ddown, rel_str, _, dollar_vol, _, _, opportunity_s, _, _, _, cycle_stage, _, _, dec_r) = res
+        # Удален внутренний индекс Recovery из вывода по ТЗ
+        (_, _, _, quality_r, entry_r, _, _, ddown, rel_str, _, dollar_vol, _, opportunity_s, _, _, cycle_stage, _, _, dec_r) = res
         
         rows.append({
             "Символ": symbol,
@@ -394,20 +383,22 @@ def build_summary_table(regime, ts_date):
         })
     return rows
 
-with st.spinner("Генерация матрицы сквозного исторического скоринга..."):
-    summary = build_summary_table(market_regime, ts_test_date)
+with st.spinner("Генерация сквозной таблицы..."):
+    summary = build_summary_table(market_regime)
 
 if summary:
     df_summary = pd.DataFrame(summary).sort_values(by="Потенциал входа", ascending=False)
+    
+    # Колонка "Recovery" полностью удалена из вывода по ТЗ
     cols_order = ["Символ", "Итоговое качество", "Потенциал входа", "Решение", "Стадия цикла", "Просадка", "RS BTC", "Ликвидность", "Opportunity"]
     df_summary = df_summary[cols_order]
     
     st.dataframe(df_summary, use_container_width=True, hide_index=True)
-    st.caption("💡 Моделирование завершено. Изменяйте «Историческую дату» в левой панели, чтобы отслеживать, как менялось поведение лидеров рынка в прошлых циклах.")
+    st.caption("💡 Таблица отранжирована по Потенциалу входа. Активы с Качеством < 40 автоматически получают статус «❌ Игнор» и пессимизируются.")
 
 # ============================================================
 # 7. ПОДВАЛ
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Синхронизация стенда тестирования: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Режим Walk-Forward: Активен")
+st.caption(f"📅 Синхронизация данных: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Внедрена премия лидера и взвешенный Opportunity Score")
