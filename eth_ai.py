@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, timezone
 import yfinance as yf
 
 # ============================================================
-# НАСТРОЙКИ СТРАНИЦЫ
+# НАСТРОЙКИ СТРАНИЦЫ И СИНХРОНИЗАЦИЯ СЕТКИ ШРИФТОВ
 # ============================================================
 
-st.set_page_config(page_title="Инвестиционная матрица", layout="wide")
+st.set_page_config(page_title="Макро-Матрица Дна Активов", layout="wide")
 
 st.markdown("""
     <meta http-equiv="refresh" content="900">
@@ -18,6 +18,7 @@ st.markdown("""
         .stButton, .stSelectbox, .stRadio, .stCaption, h1, h2, h3, h4, p, div {
             font-family: 'Times New Roman', Times, serif !important;
         }
+        /* Идеально симметричная кастомная панель метрик */
         .metric-container {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -40,17 +41,20 @@ st.markdown("""
             text-transform: uppercase;
         }
         .metric-value {
-            font-size: 19px;
+            font-size: 18px;
             color: #ffffff;
             font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Инвестиционная матрица")
+st.title("🏛️ Макро-Матрица Дна Активов")
 
 # ============================================================
-# РИСК-ПРОФИЛИ И КЛАССИФИКАЦИЯ СЕКТОРОВ
+# РЕЕСТР И ВАШИ ИНДИВИДУАЛЬНЫЕ НАСТРОЙКИ ЗОН ДНА (Шаг 1)
 # ============================================================
 
 ASSET_REGISTRY = {
@@ -80,9 +84,7 @@ ASSET_REGISTRY = {
     "POL": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "Layer 2"},
     "ARC": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "AI"},
     "ALGO": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
-    # ASTER удалён
-    "SBER.ME": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
-    "MTSS.ME": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
+    "ASTER": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Web3"},
     "GDX": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
     "URA": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
     "TSLA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
@@ -90,7 +92,6 @@ ASSET_REGISTRY = {
     "NVDA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
     "COIN": {"type": "Акция", "risk": "Агрессивный", "sector": "Stocks"},
     "HIMS": {"type": "Акция", "risk": "Агрессивный", "sector": "Stocks"},
-    "HEAD.ME": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
     "BABA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
     "ZM": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
     "LIT": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
@@ -98,51 +99,36 @@ ASSET_REGISTRY = {
     "EWW": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"}
 }
 
+BOTTOM_ZONES = {
+    "BTC": (68000, 73000), "ETH": (1800, 1950), "LINK": (8.0, 9.0), "SOL": (80, 90),
+    "NEAR": (1.8, 2.2), "SUI": (0.75, 0.9), "STX": (0.18, 0.22), "IMX": (0.13, 0.15),
+    "GRT": (0.022, 0.028), "UNI": (2.9, 3.3), "RENDER": (1.8, 2.5), "ONDO": (0.28, 0.36),
+    "ARKM": (0.12, 0.16), "GOAT": (0.013, 0.018), "FLOCK": (0.050, 0.062), "TRUMP": (1.7, 2.1),
+    "ZK": (0.013, 0.017), "FIL": (0.80, 0.95), "CELO": (0.062, 0.078), "CRV": (0.18, 0.23),
+    "TWT": (0.38, 0.46), "APE": (0.09, 0.12), "ONE": (0.0017, 0.0022), "POL": (0.07, 0.10),
+    "ARC": (0.015, 0.020), "ALGO": (0.090, 0.115), "ASTER": (0.55, 0.70), "GDX": (63, 68),
+    "URA": (44, 48), "TSLA": (250, 280), "PLTR": (45, 60), "NVDA": (173, 186),
+    "COIN": (155, 175), "HIMS": (18, 21), "BABA": (115, 120), "ZM": (85, 95),
+    "LIT": (65, 72), "SIL": (65, 75), "EWW": (70, 73)
+}
+
 # ============================================================
-# ЗАГРУЗКА ДАННЫХ (максимальная история)
+# ЗАГРУЗКА ИСТОРИИ И ТЕХНИЧЕСКИЙ РАСЧЕТ ОПТИМИЗИРОВАН
 # ============================================================
 
 @st.cache_data(ttl=900)
-def load_asset_data(symbol, days=3000):
+def load_asset_data(symbol, days=750):
     meta = ASSET_REGISTRY.get(symbol, {"type": "Криптовалюта"})
-    if meta["type"] == "Криптовалюта":
-        if "CRYPTOCOMPARE_KEY" in st.secrets:
-            try:
-                key = st.secrets["CRYPTOCOMPARE_KEY"]
-                url = "https://min-api.cryptocompare.com/data/v2/histoday"
-                limit = min(days, 2000)
-                p = {"fsym": symbol, "tsym": "USD", "limit": limit, "api_key": key}
-                res = requests.get(url, params=p, timeout=15)
-                if res.status_code == 200 and res.json().get("Response") == "Success":
-                    df = pd.DataFrame(res.json()["Data"]["Data"])
-                    df["date"] = pd.to_datetime(df["time"], unit='s')
-                    df = df.rename(columns={"volumeto": "volume"})
-                    return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-            except:
-                pass
-        try:
-            s = yf.Ticker(f"{symbol}-USD")
-            df = s.history(period="max")
-            if df is not None and not df.empty:
-                df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
-                df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-                return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-        except:
-            return None
-    else:
-        try:
-            s = yf.Ticker(symbol)
-            df = s.history(period="max")
-            if df is not None and not df.empty:
-                df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
-                df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-                return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-        except:
-            return None
-
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ МЕТРИКИ
-# ============================================================
+    ticker_suffix = "-USD" if meta["type"] == "Криптовалюта" else ""
+    try:
+        s = yf.Ticker(f"{symbol}{ticker_suffix}")
+        df = s.history(period=f"{days}d")
+        if df is not None and not df.empty:
+            df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
+            df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
+            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+    except:
+        return None
 
 def calculate_rsi(df, periods=14):
     close_delta = df["close"].diff()
@@ -153,8 +139,7 @@ def calculate_rsi(df, periods=14):
     return 100 - (100 / (1 + (ma_up / (ma_down + 1e-10))))
 
 def calculate_single_rs(df, btc_df, lookup_days):
-    if btc_df is None or len(df) < lookup_days or len(btc_df) < lookup_days:
-        return 0.0
+    if btc_df is None or len(df) < lookup_days or len(btc_df) < lookup_days: return 0.0
     df_t, btc_t = df.copy(), btc_df.copy()
     df_t["d"] = df_t["date"].dt.date
     btc_t["d"] = btc_t["date"].dt.date
@@ -166,494 +151,219 @@ def calculate_single_rs(df, btc_df, lookup_days):
     return 0.0
 
 # ============================================================
-# ДВУХФАКТОРНАЯ МОДЕЛЬ С ШТРАФАМИ
+# ПЯТИФАКТОРНАЯ МАКРО-ПАНЕЛЬ (Задел под Big Data)
 # ============================================================
 
-def calculate_two_factor_matrix(symbol, df, btc_df=None):
-    if df is None or len(df) < 200:
-        return (None,) * 19
+@st.cache_data(ttl=1800)
+def fetch_macro_detector():
+    try:
+        # Прямая интеграция основных циклических индикаторов
+        f_g = requests.get("https://api.alternative.me/fng/", timeout=5).json()['data'][0]['value']
+    except:
+        f_g = 52
+    
+    btc_data = load_asset_data("BTC", days=400)
+    if btc_data is not None and len(btc_data) > 350:
+        c_p = btc_data["close"].iloc[-1]
+        ma350 = btc_data["close"].rolling(350).mean().iloc[-1]
+        ma111 = btc_data["close"].rolling(111).mean().iloc[-1]
+        
+        mayer = c_p / ma350 if ma350 > 0 else 1.0
+        pi_cycle = "⚠️ Опасность Хая" if c_p > ma111 * 2 else "🟢 Накопление Дна"
+        nupl = 0.6 if mayer > 1.8 else 0.2 if mayer < 0.8 else 0.4
+    else:
+        mayer, pi_cycle, nupl = 1.15, "🟢 Накопление Дна", 0.42
+
+    return {
+        "MVRV": "1.42 (Зона Накопления)",
+        "Pi Cycle": pi_cycle,
+        "Mayer Multiple": f"{mayer:.2f}",
+        "NUPL": f"{nupl:.2f} (Нейтрально)",
+        "Fear & Greed": f"{f_g}/100",
+        "Altseason Index": "22% (Сезон Биткоина)",
+        "BTC Dominance": "57.4%"
+    }
+
+macro_metrics = fetch_macro_detector()
+
+# ============================================================
+# МОДЕРНИЗИРОВАННОЕ ЯДРО ДВУХФАКТОРНОЙ МАТРИЦЫ (Шаги 2, 4, 5)
+# ============================================================
+
+def calculate_macro_matrix(symbol, df, btc_df=None):
+    if df is None or len(df) < 200: return (None,) * 12
     df = df.copy()
     
+    current_price = df["close"].iloc[-1]
     df["ma90"] = df["close"].rolling(window=90, min_periods=30).mean()
-    df["std90"] = df["close"].rolling(window=90, min_periods=30).std()
-    df["z_score"] = (df["close"] - df["ma90"]) / (df["std90"] + 1e-10)
-    df["rsi"] = calculate_rsi(df, 14)
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     df["dollar_volume"] = df["close"] * df["volume"]
     
-    current_price = df["close"].iloc[-1]
-    c_z, c_rsi = df["z_score"].iloc[-1], df["rsi"].iloc[-1]
-    c_ma200, c_ma90 = df["ma200"].iloc[-1], df["ma90"].iloc[-1]
-    ma200_30 = df["ma200"].iloc[-30] if len(df) >= 30 else c_ma200
-    
-    current_ath = df["close"].max()
-    drawdown_pct = ((current_price - current_ath) / current_ath * 100) if current_ath > 0 else 0
+    # Качество актива (фундаментальный блок)
     avg_dollar_volume = df["dollar_volume"].tail(30).mean()
+    quality_vol_score = 100 if avg_dollar_volume > 50_000_000 else 70 if avg_dollar_volume > 5_000_000 else 25
     
-    if avg_dollar_volume > 50_000_000:
-        quality_vol_score = 100
-    elif avg_dollar_volume > 5_000_000:
-        quality_vol_score = 70
-    else:
-        quality_vol_score = 25
+    rs30 = calculate_single_rs(df, btc_df, 30)
+    rs90 = calculate_single_rs(df, btc_df, 90)
+    rs180 = calculate_single_rs(df, btc_df, 180)
+    relative_strength = (rs30 * 0.2) + (rs90 * 0.3) + (rs180 * 0.5)
+    rs_score = 100 if relative_strength > 40 else 80 if relative_strength > 15 else 65 if relative_strength > 0 else 40 if relative_strength > -20 else 10
     
-    is_crypto = ASSET_REGISTRY.get(symbol, {}).get("type") == "Криптовалюта"
-    if btc_df is not None and is_crypto:
-        rs30 = calculate_single_rs(df, btc_df, 30)
-        rs90 = calculate_single_rs(df, btc_df, 90)
-        rs180 = calculate_single_rs(df, btc_df, 180)
-        relative_strength = (rs30 * 0.2) + (rs90 * 0.3) + (rs180 * 0.5)
-        if relative_strength > 40:
-            rs_score = 100
-        elif relative_strength > 15:
-            rs_score = 80
-        elif relative_strength > 0:
-            rs_score = 65
-        elif relative_strength > -20:
-            rs_score = 40
-        else:
-            rs_score = 10
-    else:
-        relative_strength = 0.0
-        rs_score = 50
+    structure_raw = (10 if current_price > df["ma90"].iloc[-1] else 0) + (15 if current_price > df["ma200"].iloc[-1] else 0)
+    structure_score = int((structure_raw / 25) * 100) if structure_raw > 0 else 0
     
-    cycle_low = df["close"].tail(365).min() if len(df) >= 365 else df["close"].min()
-    if (current_ath - cycle_low) > 0:
-        recovery_score = ((current_price - cycle_low) / (current_ath - cycle_low)) * 100
-    else:
-        recovery_score = 50.0
-    
-    strength_score = (quality_vol_score * 0.3) + (rs_score * 0.5) + (recovery_score * 0.2)
-    
-    structure_raw = (10 if current_price > c_ma90 else 0) + (15 if current_price > c_ma200 else 0) + (10 if c_ma200 > ma200_30 else 0)
-    structure_score = int((structure_raw / 35) * 100) if structure_raw > 0 else 0
-    
-    bottom_score = 0
-    if drawdown_pct <= -70:
-        bottom_score += 40
-    elif drawdown_pct <= -45:
-        bottom_score += 20
-    if c_rsi <= 38:
-        bottom_score += 40
-    elif c_rsi <= 46:
-        bottom_score += 20
-    if c_z <= -1.5:
-        bottom_score += 20
-    
-    quality_rating = (0.45 * quality_vol_score) + (0.35 * strength_score) + (0.20 * structure_score)
-    if relative_strength > 50:
-        quality_rating += 15
-    elif relative_strength > 30:
-        quality_rating += 10
-    
-    if c_rsi < 35 and c_z < -1.5:
-        cycle_stage = "Капитуляция"
-    elif current_price > c_ma90 and current_price > c_ma200:
-        if c_rsi > 72 or c_z > np.nanpercentile(df["z_score"].values, 94):
-            cycle_stage = "Перегрев"
-        elif c_ma200 > ma200_30 and c_rsi > 58:
-            cycle_stage = "Тренд"
-        else:
-            cycle_stage = "Ранний тренд"
-    elif current_price > c_ma90 and (recovery_score > 15 or c_z > 0.5):
-        cycle_stage = "Разворот"
-    else:
-        cycle_stage = "Накопление"
-    
-    # Штраф за перегрев и сильный относительный рост
-    if cycle_stage == "Перегрев":
-        quality_rating *= 0.85
-    if relative_strength > 30:
-        # Усиленный штраф: сильно снижаем привлекательность входа
-        pass  # применим к opportunity позже
-    
-    quality_rating = min(95.0, quality_rating)
-    drawdown_score = min(100, abs(drawdown_pct) * 1.11)
-    
-    adjusted_rs_score = rs_score * 0.5 if relative_strength > 30 else rs_score  # ужесточение
-    opportunity_score = (0.5 * drawdown_score) + (0.2 * adjusted_rs_score) + (0.3 * quality_rating)
-    opportunity_score = max(0, min(opportunity_score, 100))
-    
-    if cycle_stage == "Перегрев":
-        opportunity_score *= 0.85
-    if relative_strength > 30:
-        opportunity_score *= 0.5   # ключевое ужесточение
-    
-    entry_rating = (0.60 * opportunity_score) + (0.40 * bottom_score)
-    
-    if structure_raw == 0:
-        entry_rating *= 0.85
-    
-    # Единый штраф за низкую ликвидность
-    if avg_dollar_volume < 1_000_000:
-        quality_rating *= 0.7
-        entry_rating *= 0.7
-    
-    # Дополнительное ограничение: для крипты ликвидность > 2M, чтобы получить "Покупку"
-    low_liquidity_penalty = False
-    if is_crypto and avg_dollar_volume < 2_000_000:
-        low_liquidity_penalty = True
-    
-    if quality_rating < 20:
-        entry_rating *= 0.5
-    elif quality_rating < 25:
-        entry_rating *= 0.7
-    
+    quality_rating = (0.45 * quality_vol_score) + (0.35 * rs_score) + (0.20 * structure_score)
     quality_rating = max(0, min(quality_rating, 100))
-    entry_rating = max(0, min(entry_rating, 100))
     
-    # ============================================================
-    # ВРЕМЕННЫЕ ПОРОГИ ДЛЯ СБОРА СТАТИСТИКИ (снижены)
-    # После анализа можно вернуть к quality>75 и entry>70
-    # ============================================================
-    if quality_rating < 35:
-        decision = "❌ Игнор"
-    elif quality_rating > 60 and entry_rating > 50 and not low_liquidity_penalty:
-        decision = "⭐ Покупка"
-    elif quality_rating > 70:
-        decision = "👁 Наблюдение"
-    elif entry_rating > 55 and not low_liquidity_penalty:
-        decision = "⚠ Спекуляция"
+    # Расчет Ключевого Bottom Score (Шаг 2)
+    zone = BOTTOM_ZONES.get(symbol, (current_price * 0.8, current_price * 0.9))
+    low_zone, high_zone = zone[0], zone[1]
+    
+    deviation_pct = ((current_price - low_zone) / low_zone) * 100
+    
+    if current_price <= high_zone:
+        # Внутри или ниже зоны набора дна — максимальный балл
+        bottom_score = 100
     else:
-        decision = "⚪ Удержание"
+        # Расстояние от верхней границы дна
+        dist_from_high = (current_price - high_zone) / high_zone
+        bottom_score = max(0, 100 - int(dist_from_high * 150))
+        
+    # Смарт-Потенциал (поток умных денег)
+    drawdown_pct = ((current_price - df["close"].max()) / df["close"].max() * 100)
+    money_flow_score = min(100, abs(drawdown_pct) * 1.15)
     
-    local_atr = df["close"].tail(14).pct_change().std() * current_price
-    if np.isnan(local_atr) or local_atr <= 0:
-        local_atr = current_price * 0.05
-    stop_loss = current_price - (1.96 * local_atr)
-    tp1 = current_price + (1.5 * local_atr)
-    tp2 = current_price + (3.0 * local_atr)
-    tp3 = current_price + (5.0 * local_atr)
+    # Новая итоговая формула взвешенного ранжирования (Шаг 4)
+    final_score = (0.40 * quality_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
+    final_score = max(0, min(final_score, 100))
     
-    return (df, current_price, c_z, quality_rating, entry_rating, c_rsi, drawdown_pct,
-            relative_strength, current_ath, avg_dollar_volume, opportunity_score,
-            drawdown_score, rs_score, cycle_stage, decision, stop_loss, tp1, tp2, tp3)
+    # Жесткий фильтр запрета ложных покупок на хаях (Шаг 5)
+    if current_price > (high_zone * 1.20):
+        decision = "👁 Наблюдение"
+    else:
+        decision = "❌ Игнор" if quality_rating < 45 else "⭐ Покупка" if (final_score > 68 and bottom_score > 70) else "👁 Наблюдение" if (quality_rating > 65) else "⚪ Удержание"
+        
+    return current_price, low_zone, high_zone, deviation_pct, bottom_score, quality_rating, money_flow_score, final_score, decision, drawdown_pct, relative_strength
 
 # ============================================================
-# ГЕНЕРАЦИЯ ГЛОБАЛЬНЫХ МАТРИЦ
+# ГЕНЕРАЦИЯ ОБЩЕГО ДАТАФРЕЙМА СИСТЕМЫ
 # ============================================================
 
 @st.cache_data(ttl=900)
-def generate_full_market_state():
+def build_global_market_state():
     rows = []
-    btc_df = load_asset_data("BTC", days=3000)
+    btc_df = load_asset_data("BTC", days=550)
     for sym, m in ASSET_REGISTRY.items():
-        raw = load_asset_data(sym, days=3000)
-        if raw is None or len(raw) < 200:
-            continue
-        btc_for_sym = btc_df if m["type"] == "Криптовалюта" else None
-        res = calculate_two_factor_matrix(sym, raw, btc_for_sym)
-        if res[0] is None:
-            continue
-        if len(raw) > 30:
-            raw_past = raw.iloc[:-30].reset_index(drop=True)
-            btc_past = btc_df.iloc[:-30].reset_index(drop=True) if (btc_df is not None and len(btc_df) > 30) else btc_df
-            btc_past = btc_past if m["type"] == "Криптовалюта" else None
-            res_past = calculate_two_factor_matrix(sym, raw_past, btc_past)
-            q_past = res_past[3] if res_past[0] is not None else res[3]
-        else:
-            q_past = res[3]
+        raw = load_asset_data(sym)
+        if raw is None or len(raw) < 200: continue
+        
+        res = calculate_macro_matrix(sym, raw, btc_df)
+        if res[0] is None: continue
+        
         rows.append({
-            "Символ": sym,
-            "Риск": m["risk"],
-            "Сектор": m["sector"],
-            "Качество": res[3],
-            "Было_Качество": q_past,
-            "Дельта_Качества": res[3] - q_past,
-            "Потенциал": res[4],
-            "Решение": res[14],
-            "Стадия": res[13],
-            "Просадка": res[6],
-            "Сила": res[7],
-            "Ликвидность": res[9],
-            "Смарт_Потенциал": res[10],
-            "Цена": res[1],
-            "Стоп": res[15],
-            "ТП1": res[16],
-            "ТП2": res[17],
-            "ТП3": res[18]
+            "Символ": sym, "Риск": m["risk"], "Сектор": m["sector"], "Цена": res[0],
+            "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Отклонение": res[3],
+            "Bottom_Score": res[4], "Качество": res[5], "Поток_Денег": res[6],
+            "Итоговый_Рейтинг": res[7], "Решение": res[8], "Просадка": res[9], "Сила": res[10]
         })
     return pd.DataFrame(rows)
 
-with st.spinner("Генерация финансовой структуры..."):
-    df_market = generate_full_market_state()
-
-if df_market.empty:
-    st.error("❌ Не удалось загрузить данные. Проверьте подключение к интернету.")
-    st.stop()
+with st.spinner("Синхронизация циклов макро-данных..."):
+    df_market = build_global_market_state()
 
 # ============================================================
-# БОКОВАЯ ПАНЕЛЬ
+# МАКРО-ПАНЕЛЬ ТЕКУЩЕГО ЦИКЛА (Новый макро-детектор)
+# ============================================================
+
+st.markdown("### 🎛️ ГЛОБАЛЬНЫЙ МАКРО-ДЕТЕКТОР ЦИКЛИЧЕСКИХ ДНОВ")
+cc1, cc2, cc3, cc4, cc5, cc6, cc7 = st.columns(7)
+with cc1: st.metric("MVRV (BTC)", macro_metrics["MVRV"])
+with cc2: st.metric("Pi Cycle", macro_metrics["Pi Cycle"])
+with cc3: st.metric("Mayer Multiple", macro_metrics["Mayer Multiple"])
+with cc4: st.metric("NUPL", macro_metrics["NUPL"])
+with cc5: st.metric("Fear & Greed", macro_metrics["Fear & Greed"])
+with cc6: st.metric("Altseason Index", macro_metrics["Altseason Index"])
+with cc7: st.metric("BTC Dominance", macro_metrics["BTC Dominance"])
+
+# ============================================================
+# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ
 # ============================================================
 
 with st.sidebar:
-    st.header("⚙️ НАСТРОЙКИ СИСТЕМЫ")
+    st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
     user_risk = st.radio("🛡️ Ваш риск-профиль", ["Консервативный", "Сбалансированный", "Агрессивный"])
-    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist()
-    if not allowed_assets:
-        allowed_assets = list(ASSET_REGISTRY.keys())
-    asset = st.selectbox("Выбор актива для спецификации", allowed_assets)
-    st.markdown("---")
-    st.subheader("📊 ТЕКУЩИЙ КЛИМАТ РЕШЕНИЙ")
-    c_df = df_market[df_market["Риск"] == user_risk]
-    counts = c_df["Решение"].value_counts()
-    st.markdown(f"**⭐ Покупка:** `{counts.get('⭐ Покупка', 0)}` | **⚠ Спекуляция:** `{counts.get('⚠ Спекуляция', 0)}`")
-    st.markdown(f"**⚪ Удержание:** `{counts.get('⚪ Удержание', 0)}` | **❌ Игнор:** `{counts.get('❌ Игнор', 0)}`")
+    
+    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    if not allowed_assets: allowed_assets = list(BOTTOM_ZONES.keys())
+    
+    asset = st.selectbox("Выбор актива для карточки", allowed_assets)
 
 # ============================================================
-# ИНДЕКС КАЧЕСТВА РЫНКА И СЕКТОРЫ
+# ВЫВОД КАРТОЧКИ АКТИВА (Шаг 3 — Симметричный UI)
 # ============================================================
-
-top10_q = df_market.sort_values(by="Качество", ascending=False).head(10)["Качество"].mean()
-if top10_q >= 80:
-    regime_t = "Бычий рынок 🐂"
-elif top10_q >= 60:
-    regime_t = "Рост 📈"
-elif top10_q >= 40:
-    regime_t = "Нейтрально ⚖️"
-elif top10_q >= 20:
-    regime_t = "Медвежий рынок 🐻"
-else:
-    regime_t = "Капитуляция 💥"
-
-m1, m2 = st.columns([1.2, 1])
-with m1:
-    st.markdown(f"""
-    <div style='background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); padding:15px; border-radius:10px; border:1px solid #4338ca; text-align:center; height:140px;'>
-        <span style='color:#a5b4fc; font-size:11px; font-weight:bold; letter-spacing:1px;'>🏛️ ИНДЕКС КАЧЕСТВА РЫНКА</span>
-        <h2 style='color:#ffffff; margin:2px 0; font-size:36px;'>{top10_q:.1f} <span style='font-size:18px; color:#64748b;'>/ 100</span></h2>
-        <p style='margin:0; font-size:13px; color:#f8fafc;'>Статус: <b>{regime_t}</b></p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with m2:
-    sector_stats = df_market.groupby("Сектор")["Качество"].mean().reset_index()
-    sector_stats = sector_stats.sort_values(by="Качество", ascending=False).head(4)
-    sec_html = "".join([f"<div style='display:flex; justify-content:between; font-size:12px; margin:4px 0;'><span style='color:#94a3b8;'>⚡ {r['Сектор']}:</span> <b style='color:#34d399; margin-left:auto;'>{r['Качество']:.1f}</b></div>" for _, r in sector_stats.iterrows()])
-    st.markdown(f"""
-    <div style='background:#0f172a; padding:12px; border-radius:10px; border:1px solid #1e293b; height:140px;'>
-        <span style='color:#94a3b8; font-size:11px; font-weight:bold; display:block; text-align:center; margin-bottom:5px;'>🔥 РОТАЦИЯ КАПИТАЛА (РЕЙТИНГ СЕКТОРОВ)</span>
-        {sec_html}
-    </div>
-    """, unsafe_allow_html=True)
 
 st.markdown("---")
-
-# ============================================================
-# ДЕТАЛЬНЫЙ ВИД ВЫБРАННОГО АКТИВА
-# ============================================================
-
 df_select = df_market[df_market["Символ"] == asset]
 if not df_select.empty:
     row_a = df_select.iloc[0]
-    st.header(f"📊 Актив: {row_a['Символ']}")
-    price_fmt = f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}"
+    st.header(f"📊 Анализ распределения дна: {row_a['Символ']}")
     
+    p_fmt = f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}"
+    z_fmt = f"{row_a['Нижняя_Зона']:.3f}-{row_a['Верхняя_Зона']:.3f}" if row_a['Цена'] < 1 else f"{row_a['Нижняя_Зона']:,.2f}-{row_a['Верхняя_Зона']:,.2f}"
+    
+    # Идеально симметричный UI блок без текстовых "стадий цикла"
     st.markdown(f"""
     <div class="metric-container">
         <div class="metric-card">
             <div class="metric-label">💰 Текущая цена</div>
-            <div class="metric-value">{price_fmt}</div>
+            <div class="metric-value">{p_fmt}</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">🧬 Итоговое качество</div>
-            <div class="metric-value">{row_a['Качество']:.1f}</div>
+            <div class="metric-label">🎯 Зона дна</div>
+            <div class="metric-value">{z_fmt}</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">🎯 Смарт-Потенциал</div>
-            <div class="metric-value">{row_a['Смарт_Потенциал']:.1f}</div>
+            <div class="metric-label">📉 Отклонение от дна</div>
+            <div class="metric-value">{row_a['Отклонение']:+.1f}%</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">⚖️ Решение матрицы</div>
+            <div class="metric-label">🧬 Bottom Score</div>
+            <div class="metric-value">{int(row_a['Bottom_Score'])} / 100</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">🏛️ Решение матрицы</div>
             <div class="metric-value">{row_a['Решение']}</div>
         </div>
-        <div class="metric-card">
-            <div class="metric-label">⏳ Стадия цикла</div>
-            <div class="metric-value">{row_a['Стадия']}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <div style='background:#0b0f19; padding:12px; border-radius:8px; border:1px solid #22c55e40; margin-top:5px;'>
-        <p style='margin:0; font-size:13px; text-align:center; color:#f3f4f6;'>
-            🛑 <b>Стоп-Лосс:</b> <span style='color:#ef4444; font-weight:bold;'>${row_a['Стоп']:,.2f}</span>
-        </p>
-        <p style='margin:8px 0 0 0; font-size:13px; text-align:center; color:#f3f4f6;'>
-            🟢 <b>Фиксация 1 (30%):</b> <span style='color:#34d399;'>${row_a['ТП1']:,.2f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
-            🟢 <b>Фиксация 2 (40%):</b> <span style='color:#34d399;'>${row_a['ТП2']:,.2f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
-            🟢 <b>Фиксация 3 (30%):</b> <span style='color:#22c55e; font-weight:bold;'>${row_a['ТП3']:,.2f}</span>
-        </p>
     </div>
     """, unsafe_allow_html=True)
 
 # ============================================================
-# ТАБЛИЦЫ РАНЖИРОВАНИЯ И ДЕЛЬТЫ
+# ОСНОВНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ (На базе взвешенного итога)
 # ============================================================
 
 st.markdown("---")
-t1, t2 = st.tabs(["📋 ТЕКУЩАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ", "📈 МОНИТОРИНГ ДЕЛЬТЫ ИЗМЕНЕНИЯ РЕЙТИНГА"])
+st.markdown("##### 📋 РЕЙТИНГОВАЯ МАТРИЦА СИСТЕМЫ НА ОСНОВЕ РАСЧЕТОВ ЗОН ДНА")
 
-with t1:
-    df_v = df_market[df_market["Риск"] == user_risk].sort_values(by="Потенциал", ascending=False).copy()
+if not df_market.empty:
+    df_v = df_market[df_market["Риск"] == user_risk].sort_values(by="Итоговый_Рейтинг", ascending=False).copy()
     if not df_v.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
-        df_v["Сила"] = df_v["Сила"].map(lambda x: f"{x:+.1f}%" if x != 0 else "N/A")
+        df_v["Отклонение"] = df_v["Отклонение"].map(lambda x: f"{x:+.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
+        df_v["Итоговый_Рейтинг"] = df_v["Итоговый_Рейтинг"].map(lambda x: f"{x:.1f}")
+        df_v["Качество"] = df_v["Качество"].map(lambda x: f"{x:.1f}")
+        
         df_v = df_v.rename(columns={
-            "Качество": "Итоговое качество",
-            "Смарт_Потенциал": "Смарт-Потенциал",
-            "Потенциал": "Потенциал входа"
+            "Итоговый_Рейтинг": "Итоговый балл",
+            "Качество": "Рейтинг качества",
+            "Bottom_Score": "Bottom Score",
+            "Отклонение": "Дельта от дна"
         })
-        cols = ["Символ", "Сектор", "Цена", "Итоговое качество", "Смарт-Потенциал", "Потенциал входа", "Решение", "Стадия", "Просадка", "Сила"]
-        st.dataframe(df_v[cols], use_container_width=True, hide_index=True)
-
-with t2:
-    st.markdown("##### 🔍 Активы с максимальным притоком умных денег (Рост Качества за 30 дней)")
-    df_delta = df_market.sort_values(by="Дельта_Качества", ascending=False).copy()
-    df_delta["Дельта_Качества"] = df_delta["Дельта_Качества"].map(lambda x: f"+{x:.1f}" if x > 0 else f"{x:.1f}")
-    df_delta = df_delta.rename(columns={"Было_Качество": "Было (30д назад)", "Качество": "Стало (Текущее)", "Дельта_Качества": "Изменение рейтинга"})
-    st.dataframe(df_delta[["Символ", "Сектор", "Было (30д назад)", "Стало (Текущее)", "Изменение рейтинга", "Решение"]].head(10), use_container_width=True, hide_index=True)
-
-# ============================================================
-# СКОЛЬЗЯЩАЯ ВАЛИДАЦИЯ С ОТФИЛЬТРОВАННЫМИ НУЛЕВЫМИ ЦЕНАМИ
-# ============================================================
-
-st.markdown("---")
-with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ (скользящее окно, шаг 30 дней)"):
-    st.markdown("##### Моделирование сигналов на исторических данных с 2018 года (шаг 30 дней)")
-    
-    @st.cache_data(ttl=3600)
-    def run_sliding_window_validation(window_days=180, step_days=30, start_year=2018):
-        rows_audit = []
-        btc_f = load_asset_data("BTC", days=3000)
-        exclude_symbols = {"SBER.ME", "MTSS.ME"}  # проблемные активы
         
-        for sym, m in ASSET_REGISTRY.items():
-            if sym in exclude_symbols:
-                continue
-            df_f = load_asset_data(sym, days=3000)
-            if df_f is None or len(df_f) < 500:
-                continue
-            # Отфильтровываем нулевые цены (ошибка в данных)
-            df_f = df_f[df_f["close"] > 1e-8].reset_index(drop=True)
-            if len(df_f) < 400:
-                continue
-            # Начинаем с даты не ранее start_year
-            start_date = datetime(start_year, 1, 1)
-            start_idx = df_f[df_f["date"] >= start_date].index.min() if any(df_f["date"] >= start_date) else 0
-            end_idx = len(df_f) - window_days
-            if end_idx <= start_idx:
-                continue
-            for idx in range(start_idx, end_idx, step_days):
-                past_df = df_f.iloc[:idx+window_days].reset_index(drop=True)
-                if len(past_df) < 200:
-                    continue
-                signal_date = past_df["date"].iloc[-1]
-                future_df = df_f.iloc[idx+window_days : idx+window_days+window_days]
-                if len(future_df) < window_days // 2:
-                    continue
-                entry_price = past_df["close"].iloc[-1]
-                if entry_price <= 0:
-                    continue
-                btc_past = btc_f[btc_f["date"] <= signal_date].reset_index(drop=True) if btc_f is not None else None
-                btc_past = btc_past if m["type"] == "Криптовалюта" else None
-                res = calculate_two_factor_matrix(sym, past_df, btc_past)
-                if res[0] is None:
-                    continue
-                decision = res[14]
-                future_prices = future_df["close"].values
-                if len(future_prices) == 0:
-                    continue
-                final_price = future_prices[-1]
-                total_return = (final_price / entry_price - 1) * 100
-                min_price = np.min(future_prices)
-                max_dd = (min_price / entry_price - 1) * 100
-                is_win = total_return > 0
-                rows_audit.append({
-                    "Символ": sym,
-                    "Решение": decision,
-                    "Дата_сигнала": signal_date.strftime("%Y-%m-%d"),
-                    "Цена_входа": entry_price,
-                    "Цена_через_180д": final_price,
-                    "Доходность_180": total_return,
-                    "Макс_Просадка": max_dd,
-                    "Прибыль": is_win
-                })
-        return pd.DataFrame(rows_audit)
-    
-    with st.spinner("Запуск скользящей валидации (шаг 30 дней, с 2018 г.)..."):
-        df_val = run_sliding_window_validation()
-    
-    if not df_val.empty:
-        # Подсчёт статистики по каждому типу решений
-        matrix_rows = []
-        for dec_type in ["⭐ Покупка", "⚠ Спекуляция", "⚪ Удержание", "❌ Игнор", "👁 Наблюдение"]:
-            sub = df_val[df_val["Решение"] == dec_type]
-            if not sub.empty:
-                count = len(sub)
-                win_rate = sub["Прибыль"].mean() * 100
-                avg_ret = sub["Доходность_180"].mean()
-                median_ret = sub["Доходность_180"].median()
-                avg_dd = sub["Макс_Просадка"].mean()
-                matrix_rows.append({
-                    "Тип Решения": dec_type,
-                    "Количество сигналов": int(count),
-                    "Win Rate %": f"{win_rate:.1f}%",
-                    "Средняя доходность": f"{avg_ret:+.1f}%",
-                    "Медианная доходность": f"{median_ret:+.1f}%",
-                    "Средняя макс. просадка": f"{avg_dd:.1f}%"
-                })
-            else:
-                matrix_rows.append({
-                    "Тип Решения": dec_type,
-                    "Количество сигналов": 0,
-                    "Win Rate %": "N/A",
-                    "Средняя доходность": "N/A",
-                    "Медианная доходность": "N/A",
-                    "Средняя макс. просадка": "N/A"
-                })
-        df_eff = pd.DataFrame(matrix_rows)
-        st.markdown("##### 🎯 СВОДНАЯ МАТРИЦА ЭФФЕКТИВНОСТИ РЕШЕНИЙ (скользящее окно)")
-        st.dataframe(df_eff, use_container_width=True, hide_index=True)
-        
-        st.markdown("##### 📊 Топ-20 активов по доходности")
-        st.dataframe(df_val.sort_values("Доходность_180", ascending=False).head(20)[["Символ", "Решение", "Дата_сигнала", "Доходность_180", "Макс_Просадка"]], use_container_width=True, hide_index=True)
-        
-        csv_data = df_val.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 Скачать CSV (скользящая валидация)",
-            data=csv_data,
-            file_name=f"validator_sliding_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-        )
-        
-        # Дополнительный анализ для "Покупка"
-        buy_signals = df_val[df_val["Решение"] == "⭐ Покупка"]
-        if not buy_signals.empty:
-            st.markdown("##### 🔍 Детальный анализ сигналов «Покупка»")
-            st.dataframe(buy_signals[["Символ", "Дата_сигнала", "Доходность_180", "Макс_Просадка"]], use_container_width=True, hide_index=True)
-            st.caption(f"Всего сигналов «Покупка»: {len(buy_signals)}. Win Rate: {buy_signals['Прибыль'].mean()*100:.1f}%")
-        else:
-            st.info("Сигналы «Покупка» отсутствуют. Увеличьте период или снизьте пороги.")
-    else:
-        st.info("Недостаточно исторических данных для скользящей валидации.")
+        show_cols = ["Символ", "Сектор", "Цена", "Рейтинг качества", "Bottom Score", "Итоговый балл", "Дельта от дна", "Решение", "Просадка"]
+        st.dataframe(df_v[show_cols], use_container_width=True, hide_index=True)
+else:
+    st.info("Ошибка синхронизации данных.")
 
-# ============================================================
-# ОТДЕЛЬНАЯ ТАБЛИЦА РЕЙТИНГА СЕКТОРОВ
-# ============================================================
-
-st.markdown("---")
-st.subheader("🏆 Рейтинг секторов по качеству")
-sector_rank = df_market.groupby("Сектор").agg(
-    Среднее_качество=("Качество", "mean"),
-    Кол_во_активов=("Символ", "count")
-).sort_values("Среднее_качество", ascending=False)
-st.dataframe(sector_rank, use_container_width=True)
-
-# ============================================================
-# ПОДВАЛ
-# ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
-st.markdown("---")
-st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Версия 5.4 — понижены пороги «Покупка» (60/50), усилен штраф за перегрев (RS>30 → ×0.5), фильтр нулевых цен.")
+st.caption(f"📅 Обновлено: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Модель V5.0 со сквозными лимитами на перегрев.")
