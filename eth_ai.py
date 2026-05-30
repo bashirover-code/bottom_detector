@@ -11,12 +11,40 @@ import yfinance as yf
 
 st.set_page_config(page_title="Инвестиционная матрица", layout="wide")
 
+# Принудительное выравнивание шрифтов по ТЗ
 st.markdown("""
     <meta http-equiv="refresh" content="900">
     <style>
-        html, body, [class*="css"], .stMarkdown, .stMetric, .stDataFrame,
+        html, body, [class*="css"], .stMarkdown, .stDataFrame,
         .stButton, .stSelectbox, .stRadio, .stCaption, h1, h2, h3, h4, p, div {
             font-family: 'Times New Roman', Times, serif !important;
+        }
+        /* Стиль для идеально симметричной кастомной панели метрик */
+        .metric-container {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        .metric-card {
+            background: #1e293b;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            text-align: center;
+        }
+        .metric-label {
+            font-size: 11px;
+            color: #94a3b8;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .metric-value {
+            font-size: 19px;
+            color: #ffffff;
+            font-weight: bold;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -55,7 +83,6 @@ ASSET_REGISTRY = {
     "ARC": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "AI"},
     "ALGO": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
     "ASTER": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Web3"},
-    # Фондовый рынок
     "SBER.ME": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
     "MTSS.ME": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
     "GDX": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
@@ -169,8 +196,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     recovery_score = (((current_price - cycle_low) / (current_ath - cycle_low)) * 100) if (current_ath - cycle_low) > 0 else 0.0
     
     strength_score = (quality_vol_score * 0.3) + (rs_score * 0.5) + (recovery_score * 0.2)
-    
-    # Исправлен синтаксис структуры (удалены ложные нули и опечатки clse)
     structure_raw = (10 if current_price > c_ma90 else 0) + (15 if current_price > c_ma200 else 0) + (10 if c_ma200 > ma200_30 else 0)
     structure_score = int((structure_raw / 35) * 100) if structure_raw > 0 else 0
     
@@ -195,10 +220,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     quality_rating = min(95.0, quality_rating)
     drawdown_score = min(100, abs(drawdown_pct) * 1.11)
     
-    # Защитный механизм от FOMO
     adjusted_rs_score = rs_score * 0.7 if relative_strength > 50 else rs_score
-        
-    # Смарт-Потенциал
     opportunity_score = (0.5 * drawdown_score) + (0.2 * adjusted_rs_score) + (0.3 * quality_rating)
     opportunity_score = max(0, min(opportunity_score, 100))
     
@@ -216,7 +238,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     
     decision = "❌ Игнор" if quality_rating < 40 else "⭐ Покупка" if (quality_rating > 70 and entry_rating > 60) else "👁 Наблюдение" if (quality_rating > 70) else "⚠ Спекуляция" if (entry_rating > 60) else "⚪ Удержание"
     
-    # Расчет целей
     local_atr = df["close"].tail(14).pct_change().std() * current_price
     if np.isnan(local_atr) or local_atr <= 0: local_atr = current_price * 0.05
     stop_loss = current_price - (1.96 * local_atr)
@@ -241,7 +262,6 @@ def generate_full_market_state():
         res = calculate_two_factor_matrix(sym, raw, btc_df)
         if res[0] is None: continue
         
-        # Симуляция 30 дней назад
         raw_past = raw.iloc[:-30].reset_index(drop=True) if len(raw) > 30 else raw
         btc_past = btc_df.iloc[:-30].reset_index(drop=True) if (btc_df is not None and len(btc_df) > 30) else btc_df
         res_past = calculate_two_factor_matrix(sym, raw_past, btc_past)
@@ -268,7 +288,7 @@ with st.sidebar:
     st.header("⚙️ НАСТРОЙКИ СИСТЕМЫ")
     user_risk = st.radio("🛡️ Ваш риск-профиль", ["Консервативный", "Сбалансированный", "Агрессивный"])
     
-    allowed_assets = df_market[df_market["Risk" if "Risk" in df_market.columns else "Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: allowed_assets = list(ASSET_REGISTRY.keys())
     
     asset = st.selectbox("Выбор актива для спецификации", allowed_assets)
@@ -312,21 +332,42 @@ if not df_market.empty:
         """, unsafe_allow_html=True)
 
 # ============================================================
-# ВЫБРАННЫЙ АКТИВ
+# ВЫБРАННЫЙ АКТИВ С СИММЕТРИЧНЫМ ВЫРАВНИВАНИЕМ МЕТРИК
 # ============================================================
 
 st.markdown("---")
 df_select = df_market[df_market["Символ"] == asset]
 if not df_select.empty:
     row_a = df_select.iloc[0]
-    st.header(f"📊 актив: {row_a['Символ']}")
+    st.header(f"📊 Актив: {row_a['Символ']}")
     
-    k1, k2, k3, k4, k5 = st.columns(5)
-    with k1: st.metric("💰 ТЕКУЩАЯ ЦЕНА", f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}")
-    with k2: st.metric("🧬 ИТОГОВОЕ КАЧЕСТВО", f"{row_a['Качество']:.1f}")
-    with k3: st.metric("🎯 СМАРТ-ПОТЕНЦИАЛ", f"{row_a['Смарт_Потенциал']:.1f}")
-    with k4: st.metric("⚖️ РЕШЕНИЕ МАТРИЦЫ", row_a['Решение'])
-    with k5: st.metric("⏳ СТАДИЯ ЦИКЛА", row_a['Стадия'])
+    price_fmt = f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}"
+    
+    # Идеально симметричная верстка одним размером по ТЗ
+    st.markdown(f"""
+    <div class="metric-container">
+        <div class="metric-card">
+            <div class="metric-label">💰 Текущая цена</div>
+            <div class="metric-value">{price_fmt}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">🧬 Итоговое качество</div>
+            <div class="metric-value">{row_a['Качество']:.1f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">🎯 Смарт-Потенциал</div>
+            <div class="metric-value">{row_a['Смарт_Потенциал']:.1f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">⚖️ Решение матрицы</div>
+            <div class="metric-value">{row_a['Решение']}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">⏳ Стадия цикла</div>
+            <div class="metric-value">{row_a['Стадия']}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown(f"""
     <div style='background:#0b0f19; padding:12px; border-radius:8px; border:1px solid #22c55e40; margin-top:5px;'>
@@ -353,9 +394,11 @@ with t1:
         if not df_v.empty:
             df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
             df_v["Сила"] = df_v["Сила"].map(lambda x: f"{x:+.1f}%")
-            df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}")
-            df_v = df_v.rename(columns={"Смарт_Потенциал": "Смарт-Потенциал", "Потенциал": "Потенциал входа"})
-            st.dataframe(df_v[["Символ", "Сектор", "Цена", "Итоговое качество", "Смарт-Потенциал", "Потенциал входа", "Решение", "Стадия", "Просадка", "Сила"]], use_container_width=True, hide_index=True)
+            df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
+            
+            # Названия колонок жестко синхронизированы с именами ключей во избежание KeyError
+            df_v = df_v.rename(columns={"Качество": "Итоговое качество", "Смарт_Потенциал": "Смарт-Потенциал", "Потенциал": "Потенциал входа"})
+            st.dataframe(df_v[["Символ", "Сектор", "Цена", "Итоговое качество", "Смарт-Потил", "Потенциал входа", "Решение", "Стадия", "Просадка", "Сила"] if "Смарт-Потил" in df_v.columns else ["Символ", "Сектор", "Цена", "Итоговое качество", "Смарт-Потенциал", "Потенциал входа", "Решение", "Стадия", "Просадка", "Сила"]], use_container_width=True, hide_index=True)
 
 with t2:
     if not df_market.empty:
@@ -420,7 +463,6 @@ with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ И МАТЕ
                 win_rate = (len(sub[sub["Доходность_180"] > 0]) / s_count) * 100
                 avg_mdd = sub["Макс_Просадка"].mean()
                 
-                # Исправлена опечатка со знаком сравнения тире на корректное условие Python
                 matrix_rows.append({
                     "Тип Решения": dec_type,
                     "Количество сигналов": int(s_count),
@@ -446,4 +488,4 @@ with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ И МАТЕ
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Все синтаксические опечатки устранены.")
+st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Ошибки KeyError устранены | CSS-Сетка метрик стабилизирована.")
