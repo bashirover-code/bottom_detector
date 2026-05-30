@@ -120,10 +120,13 @@ assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отде
 # ============================================================
 
 def _fetch_raw_yfinance(symbol, ticker_suffix, days):
-    """НЕкэшируемая функция. Сон выполняется строго здесь при реальном сетевом запросе (Проблема №1)"""
+    """Изолированная сетевая функция с внутренней обработкой исключений (Момент №1)"""
     time.sleep(0.35)
-    s = yf.Ticker(f"{symbol}{ticker_suffix}")
-    return s.history(period=f"{days}d")
+    try:
+        s = yf.Ticker(f"{symbol}{ticker_suffix}")
+        return s.history(period=f"{days}d")
+    except Exception:
+        return None
 
 @st.cache_data(ttl=900)
 def load_asset_data(symbol, days=1500):
@@ -132,15 +135,16 @@ def load_asset_data(symbol, days=1500):
         return None
         
     ticker_suffix = "-USD" if meta["type"] == "Криптовалюта" else ""
-    try:
-        df = _fetch_raw_yfinance(symbol, ticker_suffix, days)
-        if df is not None and not df.empty:
+    df = _fetch_raw_yfinance(symbol, ticker_suffix, days)
+    
+    if df is not None and not df.empty:
+        try:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
             return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
-        return None
-    except Exception:
-        return None
+        except Exception:
+            return None
+    return None
 
 def calculate_single_rs(df_t, btc_t, lookup_days):
     if btc_t is None or len(df_t) < 10 or len(btc_t) < 10: 
@@ -324,9 +328,34 @@ def calculate_historical_rating(symbol, df, btc_df, macro_score):
     
     return res_hist[6] if res_hist[6] is not None else 50.0
 
+# ============================================================
+# СТРУКТУРИРОВАНИЕ ДАННЫХ И СТЕКА (Момент №2: Перенесено ВЫШЕ вызовов)
+# ============================================================
+
+def build_global_market_state(market_dfs, macro_score):
+    rows = []
+    btc_df = market_dfs.get("BTC")
+    for sym, raw in market_dfs.items():
+        m = ASSET_REGISTRY[sym]
+        res = calculate_macro_matrix(sym, raw, macro_score, btc_df)
+        if res[0] is None: 
+            continue
+            
+        rating_30d_ago = calculate_historical_rating(sym, raw, btc_df, macro_score)
+        historical_delta = res[6] - rating_30d_ago
+        trend_force = "🟢 Усиливается" if historical_delta > 2.0 else "🔴 Ослабевает" if historical_delta < -2.0 else "... Боковик"
+        
+        rows.append({
+            "Символ": sym, "Риск": m["risk"], "Сектор": m["sector"], "Цена": res[0],
+            "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Близость_к_зоне": res[3],
+            "Статус_Зоны": res[4], "Фундаментал": res[5], "Инвестиционный_Рейтинг": res[6], 
+            "Решение": res[7], "Просадка": res[8], "Дельта_от_зоны": res[9],
+            "Рейтинг_30д_назад": rating_30d_ago, "Дельта_Рейтинга": historical_delta, "Тренд_Силы": trend_force
+        })
+    return pd.DataFrame(rows)
+
 @st.cache_data(ttl=900)
 def fetch_all_market_dfs():
-    """Чистая кэшируемая функция сборщика. Задержка теперь отрабатывает внутри загрузчиков (Проблема №1)"""
     loaded_data = {}
     for sym in ASSET_REGISTRY.keys():
         df = load_asset_data(sym)
@@ -335,13 +364,12 @@ def fetch_all_market_dfs():
     return loaded_data
 
 # ============================================================
-# СИНХРОНИЗАЦИЯ СТЕКА ДАННЫХ И СЕССИИ С УЧЕТОМ TTL (Проблема №3)
+# СИНХРОНИЗАЦИЯ СЕССИИ И АВТО-ОБНОВЛЕНИЕ TTL
 # ============================================================
 
 with st.spinner("Синхронизация и глубокий анализ биржевых стаканов..."):
     all_dfs = fetch_all_market_dfs()
 
-# Автоматическая инвалидация session_state при превышении TTL кэша (900 секунд)
 current_time_ts = time.time()
 if "df_market_ts" in st.session_state:
     if (current_time_ts - st.session_state["df_market_ts"]) > 900:
@@ -387,31 +415,9 @@ if "macro_package" not in st.session_state:
 macro_package = st.session_state["macro_package"]
 current_macro_score = macro_package["Индекс"]
 
-def build_global_market_state(market_dfs, macro_score):
-    rows = []
-    btc_df = market_dfs.get("BTC")
-    for sym, raw in market_dfs.items():
-        m = ASSET_REGISTRY[sym]
-        res = calculate_macro_matrix(sym, raw, macro_score, btc_df)
-        if res[0] is None: 
-            continue
-            
-        rating_30d_ago = calculate_historical_rating(sym, raw, btc_df, macro_score)
-        historical_delta = res[6] - rating_30d_ago
-        trend_force = "🟢 Усиливается" if historical_delta > 2.0 else "🔴 Ослабевает" if historical_delta < -2.0 else "... Боковик"
-        
-        rows.append({
-            "Символ": sym, "Риск": m["risk"], "Сектор": m["sector"], "Цена": res[0],
-            "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Близость_к_зоне": res[3],
-            "Статус_Зоны": res[4], "Фундаментал": res[5], "Инвестиционный_Рейтинг": res[6], 
-            "Решение": res[7], "Просадка": res[8], "Дельта_от_зоны": res[9],
-            "Рейтинг_30д_назад": rating_30d_ago, "Дельта_Рейтинга": historical_delta, "Тренд_Силы": trend_force
-        })
-    return pd.DataFrame(rows)
-
 if "df_market" not in st.session_state:
     st.session_state["df_market"] = build_global_market_state(all_dfs, current_macro_score)
-    st.session_state["df_market_ts"] = current_time_ts  # Метка времени записи данных (Проблема №3)
+    st.session_state["df_market_ts"] = current_time_ts
 
 df_market = st.session_state["df_market"]
 
@@ -456,13 +462,12 @@ if not df_market.empty:
         st.info("Рынок локально перегрет либо находится в фазе жесткой капитуляции. Безопасные точки входа отсутствуют.")
 
 # ============================================================
-# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ И КНОПКА СБРОСА КЭША (Проблема №2)
+# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ И СБРОС КЭША
 # ============================================================
 
 with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
     
-    # Кнопка ручного обновления кэша и сессии
     if st.button("🔄 Обновить данные", use_container_width=True):
         for key in ["df_market", "macro_package", "df_market_ts"]:
             st.session_state.pop(key, None)
@@ -571,4 +576,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Сетевой троттлинг изолирован | TTL сессии и кэша синхронизированы на 900с | Ручной сброс активен.")
+st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Исключения изолированы на сетевом уровне | Архитектурная топология выровнена.")
