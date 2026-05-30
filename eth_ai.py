@@ -10,7 +10,7 @@ import yfinance as yf
 # НАСТРОЙКИ СТРАНИЦЫ
 # ============================================================
 
-st.set_page_config(page_title="Детектор дна активов v4.1", layout="wide")
+st.set_page_config(page_title="Детектор дна активов v4.2", layout="wide")
 
 st.markdown("""
     <meta http-equiv="refresh" content="300">
@@ -22,7 +22,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Детектор дна активов v4.1")
+st.title("📊 Детектор дна активов v4.2")
 
 # ============================================================
 # 1. СПИСКИ АКТИВОВ
@@ -103,7 +103,7 @@ def load_stock_data(symbol, days=550):
     except:
         return None
 
-@st.cache_data(ttl=3600)  # Кэшируем на 1 час для защиты от лимитов 429
+@st.cache_data(ttl=3600)
 def get_coingecko_fundamentals(coin_id):
     try:
         api_key = st.secrets.get("COINGECKO_API_KEY")
@@ -201,7 +201,7 @@ def get_signal_adaptive(z_score, low, high, is_vet):
         else: return "⚪ БОКОВИК / НЕЙТРАЛЬНО", "#6b7280"
 
 # ============================================================
-# 6. КОМПЛЕКСНЫЙ АДАПТИВНЫЙ РАСЧЁТ И МАТРИЧНЫЙ СКОРИНГ V4.1
+# 6. КОМПЛЕКСНЫЙ АДАПТИВНЫЙ РАСЧЁТ И МАТРИЧНЫЙ СКОРИНГ V4.2
 # ============================================================
 
 def calculate_metrics_adaptive(df, btc_df=None):
@@ -221,7 +221,9 @@ def calculate_metrics_adaptive(df, btc_df=None):
     df["v_std"] = df["volume"].rolling(window=30, min_periods=10).std()
     df["vol_z"] = (df["volume"] - df["v_mean"]) / (df["v_std"] + 1e-10)
     
-    df = df.fillna(method="bfill").fillna(0)
+    # ИСПРАВЛЕНИЕ: Заполняем пустоты только в расчетных столбцах, не трогая datetime64[ns]
+    calc_cols = ["ma90", "std90", "z_score", "rsi", "ma200", "v_mean", "v_std", "vol_z"]
+    df[calc_cols] = df[calc_cols].bfill().ffill().fillna(0)
     
     current_price = df["close"].iloc[-1]
     c_z = df["z_score"].iloc[-1]
@@ -229,11 +231,9 @@ def calculate_metrics_adaptive(df, btc_df=None):
     c_vol_z = df["vol_z"].iloc[-1]
     c_ma200 = df["ma200"].iloc[-1]
     
-    # 1. Честный ATH за весь доступный исторический период (исправлено)
     current_ath = df["close"].max()
     drawdown_pct = ((current_price - current_ath) / current_ath * 100) if current_ath > 0 else 0
     
-    # 2. Relative Strength к BTC на базе нормализованных дней (исправлено)
     relative_strength = 0
     if btc_df is not None and len(btc_df) > 0:
         df_temp = df.copy()
@@ -253,9 +253,7 @@ def calculate_metrics_adaptive(df, btc_df=None):
     low_t, up_t = get_adaptive_thresholds(df["z_score"].values)
     dv_bull = detect_rsi_divergence(df, 35)
     
-    # МАТРИЧНЫЙ СКОРИНГ СИСТЕМЫ (Итого: макс 100 баллов)
     bottom_score = 0
-    
     if drawdown_pct <= -85: bottom_score += 25
     elif drawdown_pct <= -70: bottom_score += 20
     elif drawdown_pct <= -50: bottom_score += 10
@@ -277,12 +275,12 @@ def calculate_metrics_adaptive(df, btc_df=None):
     if relative_strength > 5: bottom_score += 15
     elif relative_strength > -2: bottom_score += 7
 
-    bottom_score = min(bottom_score, 100) # Жесткий ограничитель сверху (исправлено)
+    bottom_score = min(bottom_score, 100)
 
     return df, current_price, c_z, bottom_score, (low_t, up_t), c_rsi, c_vol_z, dv_bull, drawdown_pct, relative_strength, current_ath, c_ma200
 
 # ============================================================
-# 7. ИСТОРИЧЕСКИЙ АНАЛИЗ УСТОЙЧИВОСТИ (БЕЗУПРЕЧНЫЕ ДАТЫ)
+# 7. ИСТОРИЧЕСКИЙ АНАЛИЗ УСТОЙЧИВОСТИ
 # ============================================================
 
 def analyze_stress_tests(df):
@@ -293,12 +291,10 @@ def analyze_stress_tests(df):
     df_temp = df.copy()
     df_temp["date_str"] = df_temp["date"].dt.strftime("%Y-%m-%d")
     
-    # ТЕСТ 1
     t1_row = df_temp[df_temp["date_str"] == CRITICAL_DATES["test_1"]["date"]]
     if not t1_row.empty:
         p_t1 = t1_row["close"].values[0]
         target_date_1 = pd.Timestamp(t1_row["date"].values[0]) + pd.Timedelta(days=25)
-        # Ищем ближайший доступный день на бирже (исправлено)
         future_t1 = df_temp[df_temp["date"] >= target_date_1].head(1)
         if not future_t1.empty:
             p_f1 = future_t1["close"].values[0]
@@ -306,12 +302,10 @@ def analyze_stress_tests(df):
             results["t1_perf"] = change
             results["t1_status"] = "✅ Прошёл (Выкуплен)" if change >= 15 else "❌ Не восстановился"
             
-    # ТЕСТ 2
     t2_row = df_temp[df_temp["date_str"] == CRITICAL_DATES["test_2"]["date"]]
     if not t2_row.empty:
         p_t2 = t2_row["close"].values[0]
         target_date_2 = pd.Timestamp(t2_row["date"].values[0]) + pd.Timedelta(days=25)
-        # Ищем ближайший доступный день на бирже (исправлено)
         future_t2 = df_temp[df_temp["date"] >= target_date_2].head(1)
         if not future_t2.empty:
             p_f2 = future_t2["close"].values[0]
@@ -333,7 +327,7 @@ def call_deepseek_v3(asset, price, z, bottom_score, sig, rsi, vol_z, div, stress
     f_text = f"Капитализация: ${fund.get('market_cap', 0):,.0f}, Риск токеномики (FDV Risk): {fdv_risk}." if (fund and isinstance(fund, dict) and fund.get('market_cap')) else "Фундаментальные ончейн-данные отсутствуют (традиционный актив)."
         
     prompt = f"""Проведи глубокий экспресс-анализ {asset}:
-МЕТРИКИ v4.1: Цена: ${price:,.4f}, Z-Score: {z:.2f}, RSI: {rsi:.1f}, Историческая просадка: {drawdown:.1f}%, Объём: {vol_z:+.1f}σ, Бычий паттерн дивергенции: {'ДА' if div else 'НЕТ'}.
+МЕТРИКИ v4.2: Цена: ${price:,.4f}, Z-Score: {z:.2f}, RSI: {rsi:.1f}, Историческая просадка: {drawdown:.1f}%, Объём: {vol_z:+.1f}σ, Бычий паттерн дивергенции: {'ДА' if div else 'НЕТ'}.
 Итоговый Bottom Score системы (макс 100): {bottom_score} баллов. Сигнал детектора: {sig}.
 Текущий макро-режим глобального рынка: {regime}. {f_text}
 
@@ -363,7 +357,7 @@ def call_deepseek_v3(asset, price, z, bottom_score, sig, rsi, vol_z, div, stress
 # ============================================================
 
 with st.sidebar:
-    st.header("⚙️ НАСТРОЙКИ СИСТЕМЫ v4.1")
+    st.header("⚙️ НАСТРОЙКИ СИСТЕМЫ v4.2")
     st.markdown("---")
     market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
     if market == "Криптовалюты":
@@ -371,8 +365,8 @@ with st.sidebar:
     else:
         asset = st.selectbox("Выбор акции/фонда", STOCK_LIST)
     st.markdown("---")
-    st.caption("📈 **Математическая модель v4.1**")
-    st.caption("Исправлена фильтрация скользящих дат стресс-тестов, улучшено выравнивание таймфреймов Relative Strength.")
+    st.caption("📈 **Математическая модель v4.2**")
+    st.caption("Исправлен внутренний тип данных Pandas-fillna. Стабилизировано ядро скоринга исторических просадок.")
 
 with st.spinner("Синхронизация глобальных индикаторов макро-режима..."):
     market_regime = get_market_regime()
@@ -386,7 +380,7 @@ is_c = asset in CRYPTO_LIST
 is_v = asset in VETERAN_LIST
 
 fund = None
-fdv_risk = "N/A" if not is_c else "UNKNOWN"  # Для акций выводим N/A (исправлено)
+fdv_risk = "N/A" if not is_c else "UNKNOWN"
 
 if is_c and asset in COINGECKO_IDS:
     fund = get_coingecko_fundamentals(COINGECKO_IDS[asset])
@@ -410,7 +404,7 @@ sig_t, sig_c = get_signal_adaptive(c_z, low_thr, upper_thr, is_v)
 stress = analyze_stress_tests(df)
 
 # ============================================================
-# ВЕРХНИЙ ДАШБОРД V4.1
+# ВЕРХНИЙ ДАШБОРД V4.2
 # ============================================================
 
 st.header(f"📊 Паспорт актива: {asset}")
@@ -426,10 +420,10 @@ with c2:
     """, unsafe_allow_html=True)
 with c3: st.metric("📉 DRAWDOWN", f"{drawdown_pct:.1f}%")
 with c4: st.metric("📈 RSI (14)", f"{c_rsi:.1f}")
-with c5: st.metric("📦 ОБЪЁМ Z-SCORE", f"{c_vol_z:+.2f}σ") # Исправлено название
+with c5: st.metric("📦 ОБЪЁМ Z-SCORE", f"{c_vol_z:+.2f}σ")
 
 # ============================================================
-# СТРОКА СТАТУСА V4.1
+# СТРОКА СТАТУСА V4.2
 # ============================================================
 
 st.markdown(f"""
@@ -445,7 +439,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# ИСТОРИЧЕСКИЕ ИСПЫТАНИЯ (СКОЛЬЗЯЩИЕ ОКНА)
+# ИСТОРИЧЕСКИЕ ИСПЫТАНИЯ
 # ============================================================
 st.subheader("🛡️ Устойчивость на исторических точках дна")
 sc1, sc2 = st.columns(2)
@@ -538,10 +532,10 @@ fig.update_layout(height=480, template="plotly_dark", xaxis_title="", yaxis_titl
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 12. СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ V4.1
+# 12. СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ V4.2
 # ============================================================
 st.markdown("---")
-st.subheader("📋 СВОДНАЯ МАТРИЦА АКТИВОВ v4.1")
+st.subheader("📋 СВОДНАЯ МАТРИЦА АКТИВОВ v4.2")
 
 @st.cache_data(ttl=300)
 def build_summary_table():
@@ -562,7 +556,6 @@ def build_summary_table():
         (_, price, z, bottom_score_val, (lt, ut), rsi_v, vol_z, dv_bull, ddown, rel_str, _, _) = res
         sig, _ = get_signal_adaptive(z, lt, ut, symbol in VETERAN_LIST)
         
-        # Избегаем тяжелых запросов к CoinGecko внутри цикла сводной таблицы для исключения ошибок 429
         t_fdv_risk = "N/A" if atype == "Акция" else "📜 Клик на актив"
         
         clean_sig = sig
@@ -599,4 +592,4 @@ moscow_tz = timezone(timedelta(hours=3))
 moscow_time = datetime.now(moscow_tz)
 
 st.markdown("---")
-st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Архитектура Детектора: v4.1 (Market Regime + Global ATH Drawdown + Optimized Data Streams)")
+st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Архитектура Детектора: v4.2 (Pandas Datetime Fix + Global ATH Drawdown + Optimized Data Streams)")
