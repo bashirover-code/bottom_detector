@@ -22,7 +22,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Изменено по ТЗ
 st.title("🏛️ Инвестиционная матрица")
 
 # ============================================================
@@ -41,11 +40,37 @@ STOCK_LIST = [
 ]
 
 # ============================================================
-# 2. ЗАГРУЗКА ДАННЫХ
+# ИНТЕРФЕЙС УПРАВЛЕНИЯ И ВЫБОР ИСТОРИЧЕСКОЙ ДАТЫ
 # ============================================================
 
+with st.sidebar:
+    st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
+    st.markdown("---")
+    market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
+    asset = st.selectbox("Выбор актива", CRYPTO_LIST if market == "Криптовалюты" else STOCK_LIST)
+    st.markdown("---")
+    
+    # Внедрение Walk-Forward Тестирования по ТЗ
+    test_date = st.date_input(
+        "Историческая дата",
+        value=datetime.today(),
+        max_value=datetime.today()
+    )
+    # Превращаем в Timestamp для точной фильтрации pandas
+    ts_test_date = pd.Timestamp(test_date)
+    
+    st.markdown("---")
+    st.caption("🏛️ **Инвестиционный анализ**")
+    st.caption("• Включен режим Walk-Forward тестирования.")
+    st.caption("• Все индикаторы рассчитываются «заочно» на выбранную дату.")
+
+# ============================================================
+# 2. ЗАГРУЗКА ДАННЫХ (С ФИЛЬТРАЦИЕЙ ПО ВРЕМЕНИ)
+# ============================================================
+
+# Добавляем ts_test_date в кэш, чтобы при смене даты данные пересчитывались корректно
 @st.cache_data(ttl=900)
-def load_crypto_data(symbol, days=550):
+def load_crypto_data(symbol, ts_date, days=550):
     if "CRYPTOCOMPARE_KEY" in st.secrets:
         try:
             key = st.secrets["CRYPTOCOMPARE_KEY"]
@@ -56,7 +81,9 @@ def load_crypto_data(symbol, days=550):
                 df = pd.DataFrame(res.json()["Data"]["Data"])
                 df["date"] = pd.to_datetime(df["time"], unit='s')
                 df = df.rename(columns={"volumeto": "volume"})
-                return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+                df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+                # Walk-Forward срез
+                return df[df["date"] <= ts_date].reset_index(drop=True)
         except:
             pass
             
@@ -66,25 +93,29 @@ def load_crypto_data(symbol, days=550):
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+            df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+            # Walk-Forward срез
+            return df[df["date"] <= ts_date].reset_index(drop=True)
     except:
         return None
 
 @st.cache_data(ttl=900)
-def load_stock_data(symbol, days=550):
+def load_stock_data(symbol, ts_date, days=550):
     try:
         s = yf.Ticker(symbol)
         df = s.history(period=f"{days}d")
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+            df = df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
+            # Walk-Forward срез
+            return df[df["date"] <= ts_date].reset_index(drop=True)
     except:
         return None
 
 @st.cache_data(ttl=900)
-def get_market_regime():
-    btc_df = load_crypto_data("BTC", days=300)
+def get_market_regime(ts_date):
+    btc_df = load_crypto_data("BTC", ts_date, days=300)
     if btc_df is not None and len(btc_df) >= 200:
         btc_df["ma200"] = btc_df["close"].rolling(window=200).mean()
         btc_price = btc_df["close"].iloc[-1]
@@ -231,9 +262,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
         entry_rating *= 0.7
         reasons_checklist.append(("🚨 Фильтр ликвидности: Долларовый оборот < $1М. Штраф ×0.7", False))
 
-    # ============================================================
-    # ВНЕДРЕНИЕ СИСТЕМЫ ФИЛЬТРАЦИИ МУСОРА ПО ТЗ (ПРАВИЛО ДЛЯ TRUMP/ONE)
-    # ============================================================
+    # Жесткая каскадная фильтрация мусора
     if quality_rating < 20:
         entry_rating *= 0.5
         reasons_checklist.append(("❌ Жесткий фильтр: Крайне низкое Качество (<20). Потенциал урезан в 2 раза.", False))
@@ -244,9 +273,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     quality_rating = max(0, min(quality_rating, 100))
     entry_rating = max(0, min(entry_rating, 100))
 
-    # ============================================================
-    # АВТОМАТИЧЕСКАЯ ЗОНАЛЬНАЯ МАТРИЦА РЕШЕНИЙ ПО ТЗ
-    # ============================================================
+    # Зональная матрица решений
     if quality_rating < 40:
         decision = "❌ Игнор"
     elif quality_rating > 70 and entry_rating > 60:
@@ -273,57 +300,45 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     return df, current_price, c_z, quality_rating, entry_rating, (low_t, up_t), c_rsi, drawdown_pct, relative_strength, current_ath, avg_dollar_volume, strength_score, recovery_score, opportunity_score, drawdown_score, rs_recovery_score, accumulation_score, cycle_stage, liq_risk, reasons_checklist, decision
 
 # ============================================================
-# ИНТЕРФЕЙС ПАНЕЛИ УПРАВЛЕНИЯ
+# ВЫПОЛНЕНИЕ РАСЧЕТОВ
 # ============================================================
 
-with st.sidebar:
-    st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
-    st.markdown("---")
-    market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
-    asset = st.selectbox("Выбор актива", CRYPTO_LIST if market == "Криптовалюты" else STOCK_LIST)
-    st.markdown("---")
-    st.caption("🏛️ **Инвестиционный анализ**")
-    st.caption("• Внедрен зональный автоматический фильтр мусорных активов.")
-    st.caption("• Слабые по Качеству токены пессимизируются в таблице.")
-
 with st.spinner("Расчет макро-показателей рынка..."):
-    market_regime = get_market_regime()
-    btc_global_df = load_crypto_data("BTC", days=550)
+    market_regime = get_market_regime(ts_test_date)
+    btc_global_df = load_crypto_data("BTC", ts_test_date, days=550)
 
 is_c = asset in CRYPTO_LIST
 with st.spinner(f"Анализ весов для {asset}..."):
-    raw = load_crypto_data(asset) if is_c else load_stock_data(asset)
+    raw = load_crypto_data(asset, ts_test_date) if is_c else load_stock_data(asset, ts_test_date)
 
 if raw is None or len(raw) < 200:
-    st.error(f"❌ Недостаточно данных для анализа {asset}.")
+    st.error(f"❌ Недостаточно исторических данных для анализа {asset} на дату {test_date}. Выберите более позднюю точку.")
     st.stop()
 
-# Распаковка ядра расчетов
+# Распаковка расчетов
 df, c_price, c_z, q_rating, e_rating, (low_thr, upper_thr), c_rsi, drawdown_pct, rel_strength, current_ath, dollar_vol, strength_s, recovery_score, opportunity_score, dd_s, rs_rec_s, accum_s, cycle_stage, liq_risk, reasons, main_decision = calculate_two_factor_matrix(asset, raw, btc_global_df if is_c else None)
 
 # ============================================================
 # ВЫВОД КАРТОЧЕК И СПЕЦИФИКАЦИЙ
 # ============================================================
 
-st.header(f"📊 Спецификация актива: {asset}")
+st.header(f"📊 Спецификация актива: {asset} (Данные на {test_date.strftime('%Y-%m-%d')})")
 
 c1, c2, c3, c4, c5 = st.columns(5)
-with c1: st.metric("💰 ТЕКУЩАЯ ЦЕНА", f"${c_price:,.4f}" if c_price < 1 else f"${c_price:,.2f}")
+with c1: st.metric("💰 ИСТОРИЧЕСКАЯ ЦЕНА", f"${c_price:,.4f}" if c_price < 1 else f"${c_price:,.2f}")
 with c2: 
     q_color = "#22c55e" if q_rating >= 70 else "#eab308" if q_rating >= 45 else "#ef4444"
     st.markdown(f"<div style='background: {q_color}10; padding: 10px; border-radius: 8px; border: 1px solid {q_color}30; text-align: center;'><p style='color: gray; margin:0; font-size:10px; font-weight:bold;'>ИТОГОВОЕ КАЧЕСТВО</p><p style='color: {q_color}; font-size:20px; font-weight:bold; margin:3px 0 0 0;'>{q_rating:.1f}</p></div>", unsafe_allow_html=True)
 with c3: 
     e_color = "#22c55e" if e_rating >= 70 else "#eab308" if e_rating >= 45 else "#ef4444"
     st.markdown(f"<div style='background: {e_color}10; padding: 10px; border-radius: 8px; border: 1px solid {e_color}30; text-align: center;'><p style='color: gray; margin:0; font-size:10px; font-weight:bold;'>ПОТЕНЦИАЛ ВХОДА</p><p style='color: {e_color}; font-size:20px; font-weight:bold; margin:3px 0 0 0;'>{e_rating:.1f}</p></div>", unsafe_allow_html=True)
-with c4: 
-    # Заменено на автоматический вывод решения в карточку по ТЗ
-    st.metric("🎯 СИСТЕМНОЕ РЕШЕНИЕ", main_decision)
+with c4: st.metric("🎯 СИСТЕМНОЕ РЕШЕНИЕ", main_decision)
 with c5: st.metric("📈 SMART OPPORTUNITY", f"{opportunity_score:.1f}")
 
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #0b0f19 0%, #111827 100%); padding:12px; border-radius:10px; margin: 15px 0; border: 1px solid #1f2937;'>
     <p style='margin:0; color:#f3f4f6; font-size:13px; text-align: center;'>
-        <b>Декомпозиция индикатора Opportunity:</b> &nbsp;&nbsp;
+        <b>Декомпозиция индикатора Opportunity (на исторический момент):</b> &nbsp;&nbsp;
         Просадка (40%): <span style='color:#38bdf8; font-weight:bold;'>{dd_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         RS Отскок (30%): <span style='color:#fb923c; font-weight:bold;'>{rs_rec_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         Дни Накопления (30%): <span style='color:#a855f7; font-weight:bold;'>{accum_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
@@ -346,32 +361,31 @@ fig.update_layout(height=350, template="plotly_dark", xaxis_title="", yaxis_titl
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (ОБНОВЛЕННАЯ С РЕШЕНИЯМИ)
+# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (НА ВЫБРАННУЮ ДАТУ)
 # ============================================================
 st.markdown("---")
-st.subheader("📋 СКВОЗНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ")
+st.subheader(f"📋 СКВОЗНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ НА {test_date.strftime('%Y-%m-%d')}")
 
 @st.cache_data(ttl=900)
-def build_summary_table(regime):
+def build_summary_table(regime, ts_date):
     all_assets = {**{c: "Криптовалюта" for c in CRYPTO_LIST}, **{s: "Акция" for s in STOCK_LIST}}
     rows = []
-    btc_df = load_crypto_data("BTC", days=550)
+    btc_df = load_crypto_data("BTC", ts_date, days=550)
     
     for symbol, atype in all_assets.items():
-        df_t = load_crypto_data(symbol) if atype == "Криптовалюта" else load_stock_data(symbol)
+        df_t = load_crypto_data(symbol, ts_date) if atype == "Криптовалюта" else load_stock_data(symbol, ts_date)
         if df_t is None or len(df_t) < 200: continue
             
         res = calculate_two_factor_matrix(symbol, df_t, btc_df if atype == "Криптовалюта" else None)
         if res[0] is None: continue
             
-        # Удалена переменная recovery_s из распаковки за ненадобностью в таблице
         (_, _, _, quality_r, entry_r, _, _, ddown, rel_str, _, dollar_vol, _, _, opportunity_s, _, _, _, cycle_stage, _, _, dec_r) = res
         
         rows.append({
             "Символ": symbol,
             "Итоговое качество": round(quality_r, 1),
             "Потенциал входа": round(entry_r, 1),
-            "Решение": dec_r, # Добавлено по ТЗ
+            "Решение": dec_r,
             "Стадия цикла": cycle_stage,
             "Просадка": f"{ddown:.1f}%",
             "RS BTC": f"{rel_str:+.1f}%" if atype == "Криптовалюта" else "N/A",
@@ -380,23 +394,20 @@ def build_summary_table(regime):
         })
     return rows
 
-with st.spinner("Генерация матрицы сквозного скоринга..."):
-    summary = build_summary_table(market_regime)
+with st.spinner("Генерация матрицы сквозного исторического скоринга..."):
+    summary = build_summary_table(market_regime, ts_test_date)
 
 if summary:
-    # Таблица автоматически ранжируется по Потенциалу входа, но весь шлак опустится вниз из-за штрафа к качеству
     df_summary = pd.DataFrame(summary).sort_values(by="Потенциал входа", ascending=False)
-    
-    # Меняем порядок колонок, чтобы "Решение" было на видном месте рядом с Потенциалом
     cols_order = ["Символ", "Итоговое качество", "Потенциал входа", "Решение", "Стадия цикла", "Просадка", "RS BTC", "Ликвидность", "Opportunity"]
     df_summary = df_summary[cols_order]
     
     st.dataframe(df_summary, use_container_width=True, hide_index=True)
-    st.caption("💡 Таблица отранжирована по Потенциалу входа. Активы с Качеством < 25 автоматически штрафуются и смещаются вниз, получая статус «❌ Игнор».")
+    st.caption("💡 Моделирование завершено. Изменяйте «Историческую дату» в левой панели, чтобы отслеживать, как менялось поведение лидеров рынка в прошлых циклах.")
 
 # ============================================================
 # 7. ПОДВАЛ
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Синхронизация данных: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Автоматическая фильтрация мусорных активов включена")
+st.caption(f"📅 Синхронизация стенда тестирования: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Режим Walk-Forward: Активен")
