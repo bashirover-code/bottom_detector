@@ -15,7 +15,7 @@ st.set_page_config(page_title="Детектор дна активов v4.0", lay
 st.markdown("""
     <meta http-equiv="refresh" content="300">
     <style>
-        html, body, [class*="css"], .stMarkdown, .stMetric, .stDataFrame,
+        html, body, [class*=\"css\"], .stMarkdown, .stMetric, .stDataFrame,
         .stButton, .stSelectbox, .stRadio, .stCaption, h1, h2, h3, h4, p, div {
             font-family: 'Times New Roman', Times, serif !important;
         }
@@ -325,7 +325,7 @@ def call_deepseek_v3(asset, price, z, bottom_score, sig, rsi, vol_z, div, stress
     if not key:
         return "❌ Ключ интеграции ИИ DeepSeek отсутствует."
         
-    f_text = f"Капитализация: ${fund['market_cap']:,.0f}, Риск токеномики (FDV Risk): {fdv_risk}." if fund else ""
+    f_text = f"Капитализация: ${fund['market_cap']:,.0f}, Риск токеномики (FDV Risk): {fdv_risk}." if (fund and isinstance(fund, dict) and "market_cap" in fund) else "Фундаментальные ончейн-данные отсутствуют (традиционный актив)."
         
     prompt = f"""Проведи глубокий экспресс-анализ {asset}:
 МЕТРИКИ v4.0: Цена: ${price:,.4f}, Z-Score: {z:.2f}, RSI: {rsi:.1f}, Просадка от годового максимума: {drawdown:.1f}%, Объём: {vol_z:+.1f}σ, Бычий паттерн дивергенции: {'ДА' if div else 'НЕТ'}.
@@ -333,8 +333,8 @@ def call_deepseek_v3(asset, price, z, bottom_score, sig, rsi, vol_z, div, stress
 Текущий макро-режим глобального рынка: {regime}. {f_text}
 
 ИСТОРИЯ ПРОШЛЫХ СТРЕСС-ТЕСТОВ (10.11.25 и 06.02.26):
-- Тест тарифов 2025: {stress['t1_status']} ({stress['t1_perf'] if stress['t1_perf'] else 0:.1f}%)
-- Тест капитуляции 2026: {stress['t2_status']} ({stress['t2_perf'] if stress['t2_perf'] else 0:.1f}%)
+- Тест тарифов 2025: {stress.get('t1_status', 'Нет данных')} ({stress.get('t1_perf', 0) if stress.get('t1_perf') else 0:.1f}%)
+- Тест капитуляции 2026: {stress.get('t2_status', 'Нет данных')} ({stress.get('t2_perf', 0) if stress.get('t2_perf') else 0:.1f}%)
 
 Напиши профессиональный вывод (4-5 предложений) на русском. Оцени: является ли просадка фундаментально оправданной, защищен ли инвестор от скрытой инфляции предложения (FDV Risk) и конкретный торговый план в рамках текущего режима {regime}."""
 
@@ -463,14 +463,24 @@ with sc2:
         </div>
     """, unsafe_allow_html=True)
 
-# AI АНАЛИЗ
+# AI АНАЛИЗ (ВЫЗОВ СТРОГО ПО ИМЕНАМ ПЕРЕМЕННЫХ)
 st.markdown("---")
 if st.button("🧠 Запустить нейросетевой аудит DeepSeek v3", type="primary"):
     with st.spinner("Нейросеть сканирует профили рисков токеномики и просадки..."):
         ai_res = call_deepseek_v3(
-            asset=asset, price=c_price, z=c_z, bottom_score=bottom_score, sig=sig_t, 
-            rsi=c_rsi, vol_z=c_vol_z, div=dv_bull, stress=stress, fund=fund, 
-            drawdown=drawdown_pct, regime=market_regime, fdv_risk=fdv_risk
+            asset=asset, 
+            price=c_price, 
+            z=c_z, 
+            bottom_score=bottom_score, 
+            sig=sig_t, 
+            rsi=c_rsi, 
+            vol_z=c_vol_z, 
+            div=dv_bull, 
+            stress=stress, 
+            fund=fund, 
+            drawdown=drawdown_pct, 
+            regime=market_regime, 
+            fdv_risk=fdv_risk
         )
     st.markdown(f"""
         <div style='background:#0f172a; padding:18px; border-radius:12px; border:1px solid #1e293b; margin:10px 0;'>
@@ -536,7 +546,7 @@ fig.update_layout(height=480, template="plotly_dark", xaxis_title="", yaxis_titl
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 12. СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ V4.0 (ОБНОВЛЕННЫЕ КОЛОНКИ СОРТИРОВКИ)
+# 12. СВОДНАЯ ТАБЛИЦА ВСЕХ АКТИВОВ V4.0
 # ============================================================
 st.markdown("---")
 st.subheader("📋 СВОДНАЯ МАТРИЦА АКТИВОВ v4.0")
