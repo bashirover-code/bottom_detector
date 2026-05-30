@@ -87,7 +87,7 @@ def load_crypto_data(symbol, days=550):
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            return df[["date", "close", "volume"]]
+            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
     except:
         return None
 
@@ -99,7 +99,7 @@ def load_stock_data(symbol, days=550):
         if df is not None and not df.empty:
             df = df.reset_index().rename(columns={"Date": "date", "Close": "close", "Volume": "volume"})
             df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
-            return df[["date", "close", "volume"]]
+            return df[["date", "close", "volume"]].sort_values("date").reset_index(drop=True)
     except:
         return None
 
@@ -237,11 +237,14 @@ def calculate_metrics_adaptive(df, btc_df=None):
     # 2. Relative Strength к BTC
     relative_strength = 0
     if btc_df is not None and len(btc_df) > 0:
-        common_dates = intersect_indices = np.intersect1d(df['date'], btc_df['date'])
+        common_dates = np.intersect1d(df['date'], btc_df['date'])
         if len(common_dates) >= 30:
-            asset_perf = (df[df['date'].isin(common_dates)]['close'].iloc[-1] / df[df['date'].isin(common_dates)]['close'].iloc[-30] - 1) * 100
-            btc_perf = (btc_df[btc_df['date'].isin(common_dates)]['close'].iloc[-1] / btc_df[btc_df['date'].isin(common_dates)]['close'].iloc[-30] - 1) * 100
-            relative_strength = asset_perf - btc_perf
+            df_sub = df[df['date'].isin(common_dates)]
+            btc_sub = btc_df[btc_df['date'].isin(common_dates)]
+            if len(df_sub) >= 30 and len(btc_sub) >= 30:
+                asset_perf = (df_sub['close'].iloc[-1] / df_sub['close'].iloc[-30] - 1) * 100
+                btc_perf = (btc_sub['close'].iloc[-1] / btc_sub['close'].iloc[-30] - 1) * 100
+                relative_strength = asset_perf - btc_perf
 
     low_t, up_t = get_adaptive_thresholds(df["z_score"].values)
     dv_bull = detect_rsi_divergence(df, 35)
@@ -274,7 +277,6 @@ def calculate_metrics_adaptive(df, btc_df=None):
     if current_price >= c_ma200 and c_ma200 > 0: bottom_score += 10
     
     # Фактор 7: Relative Strength к BTC (макс 15)
-    # Если актив сильнее BTC на сильном падении или локально формирует базу
     if relative_strength > 5: bottom_score += 15
     elif relative_strength > -2: bottom_score += 7
 
@@ -400,7 +402,6 @@ if raw is None or len(raw) < 90:
     st.error(f"❌ Недостаточно данных для запуска ядра математического анализа по {asset}.")
     st.stop()
 
-# Передаем btc data для подсчета относительной силы
 df, c_price, c_z, bottom_score, (low_thr, upper_thr), c_rsi, c_vol_z, dv_bull, drawdown_pct, relative_strength, current_ath, c_ma200 = calculate_metrics_adaptive(raw, btc_global_df if is_c else None)
 sig_t, sig_c = get_signal_adaptive(c_z, low_thr, upper_thr, is_v)
 stress = analyze_stress_tests(df)
@@ -541,12 +542,11 @@ def build_summary_table():
     all_assets = {**{c: "Криптовалюта" for c in CRYPTO_LIST}, **{s: "Акция" for s in STOCK_LIST}}
     rows = []
     
-    # Предварительно загрузим BTC для расчёта относительной силы по всему циклу
     btc_df = load_crypto_data("BTC", days=550)
     
     for symbol, atype in all_assets.items():
         df_t = load_crypto_data(symbol) if atype == "Криптовалюта" else load_stock_data(symbol)
-        if df_t is None or len(df_t) < 30:
+        if df_t is None or len(df_t) < 90:
             continue
             
         res = calculate_metrics_adaptive(df_t, btc_df if atype == "Криптовалюта" else None)
@@ -556,7 +556,6 @@ def build_summary_table():
         (_, price, z, bottom_score_val, (lt, ut), rsi_v, vol_z, dv_bull, ddown, rel_str, _, _) = res
         sig, _ = get_signal_adaptive(z, lt, ut, symbol in VETERAN_LIST)
         
-        # Расчет FDV риска для таблицы
         t_fdv_risk = "—"
         if atype == "Криптовалюта" and symbol in COINGECKO_IDS:
             f_data = get_coingecko_fundamentals(COINGECKO_IDS[symbol])
@@ -566,7 +565,6 @@ def build_summary_table():
                 ratio = fd / mc if mc > 0 else 1
                 t_fdv_risk = "LOW" if ratio < 1.5 else "MEDIUM" if ratio < 3 else "HIGH"
         
-        # Безопасное удаление эмодзи
         clean_sig = sig
         for emoji in ["🔴", "🟡", "🟢", "⚪"]:
             clean_sig = clean_sig.replace(emoji, "")
@@ -590,7 +588,6 @@ with st.spinner("Построение сквозной матрицы ранжи
     summary = build_summary_table()
 
 if summary:
-    # Превращаем в датафрейм и сортируем по убыванию Bottom Score для лучшей аналитики
     df_summary = pd.DataFrame(summary).sort_values(by="Bottom Score", ascending=False)
     st.dataframe(df_summary, use_container_width=True, hide_index=True)
     st.caption("💡 Таблица отсортирована по убыванию Bottom Score. Чем выше балл, тем больше факторов подтверждают истинное дно.")
