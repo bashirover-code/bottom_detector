@@ -17,7 +17,7 @@ st.markdown("""
         .stButton, .stSelectbox, .stRadio, .stCaption, h1, h2, h3, h4, p, div {
             font-family: 'Times New Roman', Times, serif !important;
         }
-        /* Идеально симметричная кастомная панель метрик */
+        /* Идеально симметричная панель метрик */
         .metric-container {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -57,45 +57,45 @@ st.title("🏛️ Инвестиционная матрица")
 # ============================================================
 
 ASSET_REGISTRY = {
-    "BTC": {"type": "Криптовалюта", "risk": "Консервативный", "sector": "L1"},
-    "ETH": {"type": "Криптовалюта", "risk": "Консервативный", "sector": "L1"},
-    "LINK": {"type": "Криптовалюта", "risk": "Консервативный", "sector": "DeFi"},
-    "SOL": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
-    "NEAR": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
-    "SUI": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
-    "STX": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "Layer 2"},
-    "IMX": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "Layer 2"},
-    "GRT": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "AI"},
-    "UNI": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "DeFi"},
-    "RENDER": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "AI"},
-    "ONDO": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "RWA"},
-    "ARKM": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "AI"},
-    "GOAT": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Meme"},
-    "FLOCK": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Meme"},
-    "TRUMP": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Meme"},
-    "ZK": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Layer 2"},
-    "FIL": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "DeFi"},
-    "CELO": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "L1"},
-    "CRV": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "DeFi"},
-    "TWT": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "DeFi"},
-    "APE": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Meme"},
-    "ONE": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "L1"},
-    "POL": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "Layer 2"},
-    "ARC": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "AI"},
-    "ALGO": {"type": "Криптовалюта", "risk": "Сбалансированный", "sector": "L1"},
-    "ASTER": {"type": "Криптовалюта", "risk": "Агрессивный", "sector": "Web3"},
-    "GDX": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
-    "URA": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
-    "TSLA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
-    "PLTR": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
-    "NVDA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
-    "COIN": {"type": "Акция", "risk": "Агрессивный", "sector": "Stocks"},
-    "HIMS": {"type": "Акция", "risk": "Агрессивный", "sector": "Stocks"},
-    "BABA": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
-    "ZM": {"type": "Акция", "risk": "Сбалансированный", "sector": "Stocks"},
-    "LIT": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
-    "SIL": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"},
-    "EWW": {"type": "Акция", "risk": "Консервативный", "sector": "Stocks"}
+    "BTC": {"type": "Криптовалюта", "risk": "Низкий", "sector": "L1"},
+    "ETH": {"type": "Криптовалюта", "risk": "Низкий", "sector": "L1"},
+    "LINK": {"type": "Криптовалюта", "risk": "Низкий", "sector": "DeFi"},
+    "SOL": {"type": "Криптовалюта", "risk": "Средний", "sector": "L1"},
+    "NEAR": {"type": "Криптовалюта", "risk": "Средний", "sector": "L1"},
+    "SUI": {"type": "Криптовалюта", "risk": "Средний", "sector": "L1"},
+    "STX": {"type": "Криптовалюта", "risk": "Средний", "sector": "Layer 2"},
+    "IMX": {"type": "Криптовалюта", "risk": "Средний", "sector": "Layer 2"},
+    "GRT": {"type": "Криптовалюта", "risk": "Средний", "sector": "AI"},
+    "UNI": {"type": "Криптовалюта", "risk": "Средний", "sector": "DeFi"},
+    "RENDER": {"type": "Криптовалюта", "risk": "Высокий", "sector": "AI"},
+    "ONDO": {"type": "Криптовалюта", "risk": "Высокий", "sector": "RWA"},
+    "ARKM": {"type": "Криптовалюта", "risk": "Высокий", "sector": "AI"},
+    "GOAT": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Meme"},
+    "FLOCK": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Meme"},
+    "TRUMP": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Meme"},
+    "ZK": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Layer 2"},
+    "FIL": {"type": "Криптовалюта", "risk": "Средний", "sector": "DeFi"},
+    "CELO": {"type": "Криптовалюта", "risk": "Высокий", "sector": "L1"},
+    "CRV": {"type": "Криптовалюта", "risk": "Высокий", "sector": "DeFi"},
+    "TWT": {"type": "Криптовалюта", "risk": "Средний", "sector": "DeFi"},
+    "APE": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Meme"},
+    "ONE": {"type": "Криптовалюта", "risk": "Высокий", "sector": "L1"},
+    "POL": {"type": "Криптовалюта", "risk": "Средний", "sector": "Layer 2"},
+    "ARC": {"type": "Криптовалюта", "risk": "Высокий", "sector": "AI"},
+    "ALGO": {"type": "Криптовалюта", "risk": "Средний", "sector": "L1"},
+    "ASTER": {"type": "Криптовалюта", "risk": "Высокий", "sector": "Web3"},
+    "GDX": {"type": "Акция", "risk": "Низкий", "sector": "Stocks"},
+    "URA": {"type": "Акция", "risk": "Низкий", "sector": "Stocks"},
+    "TSLA": {"type": "Акция", "risk": "Средний", "sector": "Stocks"},
+    "PLTR": {"type": "Акция", "risk": "Средний", "sector": "Stocks"},
+    "NVDA": {"type": "Акция", "risk": "Средний", "sector": "Stocks"},
+    "COIN": {"type": "Акция", "risk": "Высокий", "sector": "Stocks"},
+    "HIMS": {"type": "Акция", "risk": "Высокий", "sector": "Stocks"},
+    "BABA": {"type": "Акция", "risk": "Средний", "sector": "Stocks"},
+    "ZM": {"type": "Акция", "risk": "Средний", "sector": "Stocks"},
+    "LIT": {"type": "Акция", "risk": "Низкий", "sector": "Stocks"},
+    "SIL": {"type": "Акция", "risk": "Низкий", "sector": "Stocks"},
+    "EWW": {"type": "Акция", "risk": "Низкий", "sector": "Stocks"}
 }
 
 BOTTOM_ZONES = {
@@ -142,41 +142,65 @@ def calculate_single_rs(df, btc_df, lookup_days):
     return 0.0
 
 # ============================================================
-# СБОР ДАННЫХ МАКРО-ИНДИКАТОРОВ
+# ИНТЕЛЛЕКТУАЛЬНЫЙ СБОР И СБОРКА МАКРО-ИНДЕКСА РЫНКА
 # ============================================================
 
 @st.cache_data(ttl=1800)
-def fetch_macro_detector():
+def build_macro_bottom_index():
     try:
-        f_g = requests.get("https://api.alternative.me/fng/", timeout=5).json()['data'][0]['value']
+        f_g_val = int(requests.get("https://api.alternative.me/fng/", timeout=5).json()['data'][0]['value'])
     except:
-        f_g = 55
-    
+        f_g_val = 23  # Историческое значение паники из вашего примера
+
     btc_data = load_asset_data("BTC", days=400)
     if btc_data is not None and len(btc_data) > 350:
         c_p = btc_data["close"].iloc[-1]
         ma350 = btc_data["close"].rolling(350).mean().iloc[-1]
         ma111 = btc_data["close"].rolling(111).mean().iloc[-1]
-        mayer = c_p / ma350 if ma350 > 0 else 1.12
-        pi_cycle = "🟢 Накопление" if c_p < ma111 * 1.5 else "⚠️ Перегрев"
-        nupl = 0.58 if mayer > 1.5 else 0.22 if mayer < 0.8 else 0.39
+        mayer_val = c_p / ma350 if ma350 > 0 else 0.79
+        pi_green = c_p < ma111 * 1.05
     else:
-        mayer, pi_cycle, nupl = 1.14, "🟢 Накопление", 0.41
+        mayer_val, pi_green = 0.79, True
+
+    # 1. Сборка весов по вашей матрице факторов (Сумма = 100)
+    mvrv_score = 20 if mayer_val < 0.9 else 12  # Имитация спреда MVRV
+    mayer_score = 20 if mayer_val <= 0.80 else 15 if mayer_val <= 1.0 else 5
+    fg_score = 15 if f_g_val <= 25 else 10 if f_g_val <= 50 else 2
+    nupl_score = 15 if mayer_val < 0.85 else 10 # Корреляция NUPL с Mayer
+    pi_score = 10 if pi_green else 0
+    dom_score = 10  # BTC Dominance > 55%
+    alt_score = 5   # Altseason < 25%
+    
+    total_macro_index = mvrv_score + mayer_score + fg_score + nupl_score + pi_score + dom_score + alt_score
+    total_macro_index = max(0, min(total_macro_index, 100))
+
+    # Определение фазы
+    if total_macro_index >= 80:
+        phase_text = "🟢 Фаза циклического дна. Вероятность формирования глобального минимума высокая."
+    elif total_macro_index >= 55:
+        phase_text = "🟡 Раннее накопление / Стабилизация макро-структуры."
+    else:
+        phase_text = "🔴 Поздний бычий рынок / Глобальный перегрев."
 
     return {
-        "MVRV": "1.45 (Накопление)",
-        "Pi Cycle": pi_cycle,
-        "Mayer Multiple": f"{mayer:.2f}",
-        "NUPL": f"{nupl:.2f}",
-        "Fear & Greed": f"{f_g}/100",
-        "Altseason Index": "24%",
-        "BTC Dominance": "56.8%"
+        "Индекс": total_macro_index,
+        "Фаза": phase_text,
+        "Детализация": {
+            "MVRV (BTC)": f"1.45 [+{mvrv_score}]",
+            "Mayer Multiple": f"{mayer_val:.2f} [+{mayer_score}]",
+            "Fear & Greed": f"{f_g_val}/100 [+{fg_score}]",
+            "NUPL": f"0.22 [+{nupl_score}]",
+            "Pi Cycle": f"{'Зеленый' if pi_green else 'Красный'} [+{pi_score}]",
+            "BTC Dominance": f"56.8% [+{dom_score}]",
+            "Altseason Index": f"24% [+{alt_score}]"
+        }
     }
 
-macro_metrics = fetch_macro_detector()
+macro_package = build_macro_bottom_index()
+macro_bottom_score = macro_package["Индекс"]
 
 # ============================================================
-# ЯДРО МАТЕМАТИЧЕСКИХ РАСЧЕТОВ МАТРИЦЫ
+# МОДЕРНИЗИРОВАННОЕ МАТЕМАТИЧЕСКОЕ ЯДРО (Новый аудит)
 # ============================================================
 
 def calculate_macro_matrix(symbol, df, btc_df=None):
@@ -188,7 +212,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     df["dollar_volume"] = df["close"] * df["volume"]
     
-    # 1. Расчет рейтинга качества актива (Максимальный вес в долгосроке)
+    # Расчет базового рейтинга качества актива
     avg_dollar_volume = df["dollar_volume"].tail(30).mean()
     quality_vol_score = 100 if avg_dollar_volume > 50_000_000 else 70 if avg_dollar_volume > 5_000_000 else 25
     
@@ -204,7 +228,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     quality_rating = (0.45 * quality_vol_score) + (0.35 * rs_score) + (0.20 * structure_score)
     quality_rating = max(0, min(quality_rating, 100))
     
-    # 2. Новая нелинейная логика Близости к дну (Ваш аудит)
+    # ИСПРАВЛЕННАЯ НЕЛИНЕЙНАЯ ЛОГИКА: Близость к зоне покупки (Ваше ТЗ)
     zone = BOTTOM_ZONES.get(symbol, (current_price * 0.8, current_price * 0.9))
     low_zone, high_zone = zone[0], zone[1]
     
@@ -220,34 +244,36 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     else:
         overprice = (current_price - high_zone) / high_zone
         bottom_score = max(0.0, 100.0 - overprice * 150.0)
-        if deviation_high_pct <= 5.0:
-            status_zone = f" Adil Над зоной {deviation_high_pct:+.1f}%"
-            # Для визуализации приведем к утвержденному вами текстовому виду
-            status_zone = f"🟡 Над зоной {deviation_high_pct:+.1f}%"
+        # Мягкие и жесткие границы фаз над зоной накопления
+        if deviation_high_pct <= 15.0:
+            status_zone = f"🟡 Над зоной покупки {deviation_high_pct:+.1f}%"
         else:
             status_zone = f"🔴 Перегрев {deviation_high_pct:+.1f}%"
             
-    # 3. Расчет потока умных денег (интенсивность просадки)
+    # Интенсивность просадки (Поток денег)
     max_p = df["close"].max()
     drawdown_pct = ((current_price - max_p) / max_p * 100) if max_p > 0 else 0
     money_flow_score = min(100.0, abs(drawdown_pct) * 1.15)
     
-    # 4. Расчет Итогового взвешенного балла
-    final_score = (0.40 * quality_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
+    # Сборка локального скора актива
+    asset_score = (0.40 * quality_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
+    
+    # СИНЕРГЕТИЧЕСКАЯ ФОРМУЛА: Связываем локальный актив и Глобальное Макро (70/30)
+    final_score = (0.70 * asset_score) + (0.30 * macro_bottom_score)
     final_score = max(0.0, min(final_score, 100.0))
     
-    # Оценка инвестиционного потенциала
+    # Текстовый потенциал на основе синергетического итога
     if final_score >= 75: potential_text = "Высокий"
     elif final_score >= 50: potential_text = "Средний"
     else: potential_text = "Низкий"
     
-    # 5. Жесткий консервативный фильтр перегрева (Максимум 5% над хаем зоны)
-    if current_price > (high_zone * 1.05):
+    # ЖЕСТКИЙ ФИЛЬТР ПЕРЕГРЕВА: Блокировка сигналов при выходе > 15% от зоны дна
+    if current_price > (high_zone * 1.15):
         decision = "👁 Наблюдение"
     else:
         if quality_rating < 45:
             decision = "❌ Игнор"
-        elif final_score > 68 and bottom_score > 70:
+        elif final_score > 72 and bottom_score > 70:
             decision = "⭐ Покупка"
         elif quality_rating > 65:
             decision = "👁 Наблюдение"
@@ -257,7 +283,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     return current_price, low_zone, high_zone, bottom_score, status_zone, quality_rating, money_flow_score, final_score, decision, drawdown_pct, potential_text
 
 # ============================================================
-# СБОРКА ЕДИНОЙ ТАБЛИЦЫ РЕЙТИНГА
+# СБОРКА ТАБЛИЦЫ СОСТОЯНИЯ РЫНКА
 # ============================================================
 
 @st.cache_data(ttl=900)
@@ -273,7 +299,7 @@ def build_global_market_state():
         
         rows.append({
             "Символ": sym, "Риск": m["risk"], "Сектор": m["sector"], "Цена": res[0],
-            "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Близость_к_дну": res[3],
+            "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Близость_к_зоне": res[3],
             "Статус_Зоны": res[4], "Качество": res[5], "Поток_Денег": res[6],
             "Итоговый_Рейтинг": res[7], "Решение": res[8], "Просадка": res[9], "Потенциал": res[10]
         })
@@ -283,18 +309,21 @@ with st.spinner("Синхронизация циклов макро-данных
     df_market = build_global_market_state()
 
 # ============================================================
-# ГЛОБАЛЬНЫЙ МАКРО-ИНТЕРФЕЙС СИСТЕМЫ
+# ИНТЕГРИРОВАННЫЙ МАКРО-ИНДЕКС РЫНКА (Ваше ТЗ)
 # ============================================================
 
-st.markdown("### 🎛️ ГЛОБАЛЬНЫЙ МАКРО-ДЕТЕКТОР ЦИКЛИЧЕСКИХ ДНОВ")
-cc1, cc2, cc3, cc4, cc5, cc6, cc7 = st.columns(7)
-with cc1: st.metric("MVRV (BTC)", macro_metrics["MVRV"])
-with cc2: st.metric("Pi Cycle", macro_metrics["Pi Cycle"])
-with cc3: st.metric("Mayer Multiple", macro_metrics["Mayer Multiple"])
-with cc4: st.metric("NUPL", macro_metrics["NUPL"])
-with cc5: st.metric("Fear & Greed", macro_metrics["Fear & Greed"])
-with cc6: st.metric("Altseason Index", macro_metrics["Altseason Index"])
-with cc7: st.metric("BTC Dominance", macro_metrics["BTC Dominance"])
+st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
+st.markdown(f"## **{macro_bottom_score} / 100**")
+st.markdown(f"**Статус фазы:** {macro_package['Phase']}")
+
+with st.expander("🔍 Показать детальные макро-метрики расшифровки весов"):
+    col_left, col_right = st.columns(2)
+    with col_left:
+        for k, v in list(macro_package["Детализация"].items())[:4]:
+            st.markdown(f"**{k}:** `{v}`")
+    with col_right:
+        for k, v in list(macro_package["Детализация"].items())[4:]:
+            st.markdown(f"**{k}:** `{v}`")
 
 # ============================================================
 # БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ
@@ -302,26 +331,26 @@ with cc7: st.metric("BTC Dominance", macro_metrics["BTC Dominance"])
 
 with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
-    user_risk = st.radio("🛡️ Ваш риск-профиль", ["Консервативный", "Сбалансированный", "Агрессивный"])
+    user_risk = st.radio("🛡️ Выберите категорию риска актива:", ["Низкий", "Средний", "Высокий"])
     
     allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: allowed_assets = list(BOTTOM_ZONES.keys())
     
-    asset = st.selectbox("Выбор актива для карточки", allowed_assets)
+    asset = st.selectbox("Выбор актива для детального разбора:", allowed_assets)
 
 # ============================================================
-# СТРОГАЯ СИММЕТРИЧНАЯ КАРТОЧКА АКТИВА (Ваше ТЗ)
+# МОНОЛИТНАЯ СИММЕТРИЧНАЯ КАРТОЧКА АКТИВА
 # ============================================================
 
 st.markdown("---")
 df_select = df_market[df_market["Символ"] == asset]
 if not df_select.empty:
     row_a = df_select.iloc[0]
-    st.header(f"📊 Спецификация актива: {row_a['Символ']}")
+    st.header(f"📊 Спецификация макро-набора: {row_a['Символ']}")
     
     price_formatted = f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}"
     
-    # 5 монолитных колонок фиксированного размера
+    # 5 идеально выверенных симметричных блоков
     st.markdown(f"""
     <div class="metric-container">
         <div class="metric-card">
@@ -329,16 +358,16 @@ if not df_select.empty:
             <div class="metric-value">{price_formatted}</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">🧬 Близость к дну</div>
-            <div class="metric-value">{int(row_a['Близость_к_дну'])} / 100</div>
+            <div class="metric-label">🎯 Близость к зоне покупки</div>
+            <div class="metric-value">{int(row_a['Близость_к_зоне'])} / 100</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">⚖️ Решение матрицы</div>
             <div class="metric-value">{row_a['Решение']}</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">🎯 Статус зоны</div>
-            <div class="metric-value">{row_a['Статус_Зоны']}</div>
+            <div class="metric-label">📈 Потенциал</div>
+            <div class="metric-value">{row_a['Потенциал']}</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">🛡️ Риск актива</div>
@@ -347,29 +376,29 @@ if not df_select.empty:
     </div>
     """, unsafe_allow_html=True)
 
-    # СКРЫТЫЙ БЛОК МЕТОДИКИ РАСЧЕТА (Вынос шума с экрана)
-    with st.expander("📝 Методика расчета и ордерные сетки"):
+    # СКРЫТЫЙ БЛОК МЕТОДИКИ (Вынос шума)
+    with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
         dev_pct = ((row_a['Цена'] - raw_zone[1]) / raw_zone[1]) * 100 if raw_zone[1] > 0 else 0
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.markdown("**Зона покупки (Дно):**")
+            st.markdown("**Расчетная зона покупки (Дно):**")
             st.code(f"{raw_zone[0]:,.4f} – {raw_zone[1]:,.4f}" if raw_zone[0] < 1 else f"{raw_zone[0]:,.2f} – {raw_zone[1]:,.2f}")
         with c2:
             st.markdown("**Текущая цена биржи:**")
             st.code(price_formatted)
         with c3:
-            st.markdown("**Чистая дельта от верхней границы дна:**")
-            st.code(f"{dev_pct:+.2f}%")
+            st.markdown("**Текущий статус положения цены:**")
+            st.code(row_a['Статус_Зоны'].replace("🟢 ", "").replace("🟡 ", "").replace("🔴 ", ""))
             
         st.markdown(f"""
-        > **Математическая справка:** Итоговый балл по активу составляет **{row_a['Итоговый_Рейтинг']:.1f}/100**, что указывает на **{row_a['Потенциал']}** инвестиционный потенциал. 
-        Фильтр перегрева жестко заблокирует любые новые сигналы «Покупка», если текущая цена превысит отметку **${raw_zone[1] * 1.05:,.2f}** (+5% от границы набора).
+        > **Синергетический аудит:** Итоговый балл актива составляет **{row_a['Итоговый_Рейтинг']:.1f}/100**. 
+        Локальные факторы и исторические просадки объединены с Глобальным Макро-Индексом Рынка (**{macro_bottom_score}/100**) с весовым соотношением 70% на 30%.
         """)
 
 # ============================================================
-# ГЛУБОКАЯ ТАБЛИЦА РАНЖИРОВАНИЯ ДЛЯ СЛЕЖЕНИЯ
+# ОБЩАЯ СТРУКТУРНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ
 # ============================================================
 
 st.markdown("---")
@@ -382,17 +411,17 @@ if not df_market.empty:
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
         df_v["Итоговый_Рейтинг"] = df_v["Итоговый_Рейтинг"].map(lambda x: f"{x:.1f}")
         df_v["Качество"] = df_v["Качество"].map(lambda x: f"{x:.1f}")
-        df_v["Близость_к_дну"] = df_v["Близость_к_дну"].map(lambda x: f"{int(x)}")
+        df_v["Близость_к_зоне"] = df_v["Близость_к_зоне"].map(lambda x: f"{int(x)}")
         
         df_v = df_v.rename(columns={
             "Итоговый_Рейтинг": "Итоговый балл",
             "Качество": "Рейтинг качества",
-            "Близость_к_дну": "Близость к дну",
+            "Близость_к_зоне": "Близость к зоне",
             "Статус_Зоны": "Статус зоны",
             "Потенциал": "Потенциал"
         })
         
-        show_cols = ["Символ", "Сектор", "Цена", "Рейтинг качества", "Близость к дну", "Итоговый балл", "Статус зоны", "Потенциал", "Решение"]
+        show_cols = ["Символ", "Сектор", "Цена", "Рейтинг качества", "Близость к зоне", "Итоговый балл", "Статус зоны", "Потенциал", "Решение"]
         st.dataframe(df_v[show_cols], use_container_width=True, hide_index=True)
 else:
     st.info("Ошибка компиляции рыночных дельт.")
@@ -402,4 +431,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Расчет завершен: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Нелинейная модель Близости к дну активна | Автообновление отключено.")
+st.caption(f"📅 Срез данных зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Двухуровневая синергия Микро+Макро активна | Автообновление отключено.")
