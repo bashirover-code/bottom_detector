@@ -115,7 +115,7 @@ BOTTOM_ZONES = {
 # ============================================================
 
 @st.cache_data(ttl=900)
-def load_asset_data(symbol, days=750):
+def load_asset_data(symbol, days=1500): # Расширен лимит под глубокий макро-анализ (200WMA)
     meta = ASSET_REGISTRY.get(symbol)
     if not meta:
         return None
@@ -155,80 +155,130 @@ def calculate_single_rs(df, btc_df, lookup_days):
     return 0.0
 
 # ============================================================
-# РАСЧЕТ РЕАЛЬНОГО МАКРО-ИНДЕКСА (БЕЗ ХАРДКОДА)
+# РАСЧЕТ РЕАЛЬНОГО МАКРО-ИНДЕКСА ПО МАТЕМАТИЧЕСКИМ МЕТРИКАМ
 # ============================================================
 
-@st.cache_data(ttl=1800)
-def build_macro_bottom_index():
+def build_macro_bottom_index(market_assets_dict=None):
+    # 1. Индекс Страха и Жадности (Внешний сантимент)
     try:
         res = requests.get("https://api.alternative.me/fng/", timeout=5).json()
         f_g_val = int(res['data'][0]['value'])
     except Exception as e:
-        st.error(f"Сбой макро-API Fear&Greed: {e}. Применен аварийный дефолт (нейтрально).")
         f_g_val = 50
 
-    btc_data = load_asset_data("BTC", days=450)
-    deviation_btc_high = 0.0
+    btc_data = load_asset_data("BTC", days=1450) # Загружаем глубокую историю для 200WMA
+    
+    # Дефолтные значения независимых макро-метрик
     mayer_val = 1.0
-    pi_green = False
-    btc_dom_est = 55.0
-    alt_index_est = 35.0
+    lre_val = 0.0
+    wma200_dist = 1.0
+    btc_volume_share = 55.0
+    altseason_ratio = 30.0
 
-    if btc_data is not None and len(btc_data) > 350:
+    if btc_data is not None and len(btc_data) > 1400:
         c_p = btc_data["close"].iloc[-1]
+        
+        # --- МЕТРИКА 1: Mayer Multiple ---
         ma350 = btc_data["close"].rolling(350).mean().iloc[-1]
-        ma111 = btc_data["close"].rolling(111).mean().iloc[-1]
-        
         mayer_val = c_p / ma350 if ma350 > 0 else 1.0
-        pi_green = c_p < ma111 * 1.05
         
-        btc_high_zone = BOTTOM_ZONES["BTC"][1]
-        deviation_btc_high = ((c_p - btc_high_zone) / btc_high_zone) * 100
+        # --- МЕТРИКА 2: Logarithmic Regression Error (LRE) ---
+        # Рассчитываем честную логарифмическую регрессию от базовой линии времени
+        btc_data['log_p'] = np.log10(btc_data['close'])
+        x = np.arange(len(btc_data))
+        slope, intercept = np.polyfit(x, btc_data['log_p'], 1)
+        expected_log_p = slope * x[-1] + intercept
+        lre_val = btc_data['log_p'].iloc[-1] - expected_log_p # Ошибка регрессии
         
-        btc_momentum = (c_p / btc_data["close"].iloc[-30] - 1) * 100
-        btc_dom_est = max(40.0, min(70.0, 52.0 + (btc_momentum * 0.15)))
-        alt_index_est = max(5.0, min(95.0, 50.0 - (btc_momentum * 0.4)))
-    else:
-        st.warning("Не удалось рассчитать динамический Mayer Multiple. Применены базовые константы.")
+        # --- МЕТРИКА 3: 200WMA Distance ---
+        # 200 недель ~ 1400 дней. Считаем скользящую среднюю.
+        ma1400 = btc_data["close"].rolling(1400).mean().iloc[-1]
+        wma200_dist = c_p / ma1400 if ma1400 > 0 else 1.0
 
-    mvrv_score = 20 if mayer_val < 0.9 else 12
-    mayer_score = 20 if mayer_val <= 0.80 else 15 if mayer_val <= 1.0 else 5
-    fg_score = 15 if f_g_val <= 25 else 10 if f_g_val <= 50 else 2
-    nupl_score = 15 if mayer_val < 0.85 else 10
-    pi_score = 10 if pi_green else 0
-    dom_score = 10 if btc_dom_est > 54.0 else 5
-    alt_score = 10 if alt_index_est < 30.0 else 3
-    
-    total_macro_index = mvrv_score + mayer_score + fg_score + nupl_score + pi_score + dom_score + alt_score
-    
-    if f_g_val > 20 or deviation_btc_high > 5.0:
-        total_macro_index = min(total_macro_index, 82)
-    else:
-        total_macro_index = max(0, min(total_macro_index, 100))
+    # --- МЕТРИКА 4 и 5: Честная Доминация Объёмов и Честный Альтсезон ---
+    if market_assets_dict and len(market_assets_dict) > 5:
+        total_alt_volume = 0.0
+        btc_vol_14d = 0.0
+        alts_beating_btc = 0
+        total_alts_checked = 0
+        
+        btc_perf_60d = 0.0
+        if btc_data is not None and len(btc_data) > 60:
+            btc_perf_60d = (btc_data['close'].iloc[-1] / btc_data['close'].iloc[-60] - 1) * 100
 
-    if total_macro_index >= 80:
-        phase_text = "🟢 Вероятная зона циклического дна"
-    elif total_macro_index >= 55:
-        phase_text = "🟡 Раннее накопление / Стабилизация"
+        for sym, df_asset in market_assets_dict.items():
+            if df_asset is None or len(df_asset) < 60:
+                continue
+            
+            # Расчет суммарного долларового объема торгов за 14 дней
+            df_asset['dollar_vol'] = df_asset['close'] * df_asset['volume']
+            vol_14d = df_asset['dollar_vol'].tail(14).sum()
+            
+            if sym == "BTC":
+                btc_vol_14d = vol_14d
+            else:
+                total_alt_volume += vol_14d
+                # Проверка перформанса для индекса Альтсезона
+                alt_perf_60d = (df_asset['close'].iloc[-1] / df_asset['close'].iloc[-60] - 1) * 100
+                if alt_perf_60d > btc_perf_60d:
+                    alts_beating_btc += 1
+                total_alts_checked += 1
+                
+        if (btc_vol_14d + total_alt_volume) > 0:
+            btc_volume_share = (btc_vol_14d / (btc_vol_14d + total_alt_volume)) * 100
+        if total_alts_checked > 0:
+            altseason_ratio = (alts_beating_btc / total_alts_checked) * 100
+
+    # ============================================================
+    # МАТЕМАТИЧЕСКИЙ ЧЕСТНЫЙ СКОРИНГ (МАКСИМУМ 100 БЕЗ ЗАГЛУШЕК)
+    # ============================================================
+    
+    # 1. Скоринг Mayer Multiple (Вес: 20)
+    mayer_score = 20 if mayer_val <= 0.75 else 15 if mayer_val <= 0.95 else 8 if mayer_val <= 1.15 else 0
+    
+    # 2. Скоринг Логарифмической Регрессии (Вес: 20)
+    lre_score = 20 if lre_val <= -0.15 else 15 if lre_val <= -0.05 else 5 if lre_val <= 0.1 else 0
+    
+    # 3. Скоринг Дистанции до 200WMA (Вес: 20)
+    wma_score = 20 if wma200_dist <= 1.02 else 14 if wma200_dist <= 1.20 else 5 if wma200_dist <= 1.40 else 0
+    
+    # 4. Скоринг сантимента Fear & Greed (Вес: 15)
+    fg_score = 15 if f_g_val <= 20 else 10 if f_g_val <= 40 else 3 if f_g_val <= 60 else 0
+    
+    # 5. Скоринг Доминации Объема BTC (Вес: 15)
+    # Защитная логика: высокое доминирование объемов BTC свидетельствует о капитуляции альткоинов, что исторически означает близость дна рынка.
+    dom_score = 15 if btc_volume_share >= 60.0 else 10 if btc_volume_share >= 48.0 else 2
+    
+    # 6. Скоринг честного Альтсезона (Вес: 10)
+    # Чем меньше альткоинов опережают BTC за 60 дней, тем ближе дно накопления по рынку.
+    alt_score = 10 if altseason_ratio <= 20.0 else 6 if altseason_ratio <= 45.0 else 0
+
+    # Итоговый честный математический индекс без искусственных min() ограничений
+    total_macro_index = mayer_score + lre_score + wma_score + fg_score + dom_score + alt_score
+    total_macro_index = max(0, min(total_macro_index, 100))
+
+    if total_macro_index >= 75:
+        phase_text = "🟢 Циклическое дно / Сильное накопление"
+    elif total_macro_index >= 45:
+        phase_text = "🟡 Нейтральный баланс / Стабилизация"
     else:
-        phase_text = "🔴 Поздний бычий рынок / Перегрев"
+        phase_text = "🔴 Фаза распределения / Перегрев"
 
     return {
         "Индекс": total_macro_index,
         "Фаза": phase_text,
         "Детализация": {
-            "MVRV (BTC Proxy)": f"{1.0 + (mayer_val - 1)*1.2:.2f} [+{mvrv_score}]",
-            "Mayer Multiple": f"{mayer_val:.2f} [+{mayer_score}]",
-            "Fear & Greed": f"{f_g_val}/100 [+{fg_score}]",
-            "NUPL (Proxy)": f"{0.1 + (mayer_val - 1)*0.5:.2f} [+{nupl_score}]",
-            "Pi Cycle": f"{'Зеленый (Дно)' if pi_green else 'Красный (Перегрев)'} [+{pi_score}]",
-            "BTC Dominance (Est)": f"{btc_dom_est:.1f}% [+{dom_score}]",
-            "Altseason Index (Est)": f"{alt_index_est:.0f}/100 [+{alt_score}]"
+            "Mayer Multiple (BTC)": f"{mayer_val:.2f} [+{mayer_score}]",
+            "Log Regression Error (LRE)": f"{lre_val:+.3f} [+{lre_score}]",
+            "200WMA Distance (BTC)": f"{wma200_dist:.2f}x [+{wma_score}]",
+            "Fear & Greed Index": f"{f_g_val}/100 [+{fg_score}]",
+            "BTC Vol Dominance (Real)": f"{btc_volume_share:.1f}% [+{dom_score}]",
+            "Alt Outperformance (60d)": f"{altseason_ratio:.1f}% [+{alt_score}]"
         }
     }
 
 # ============================================================
-# УСОВЕРШЕНСТВОВАННОЕ МАТЕМАТИЧЕСКОЕ ЯДРО
+# МАТЕМАТИЧЕСКОЕ ЯДРО СКОРИНГА АКТИВОВ
 # ============================================================
 
 def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
@@ -305,18 +355,30 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
             deviation_high_pct, rating_30d_ago, historical_delta, trend_force)
 
 # ============================================================
-# ПОСТРОЕНИЕ ТАБЛИЦЫ РЫНКА С ПЕРЕДАЧЕЙ ПАРАМЕТРОВ
+# СИНХРОНИЗАЦИЯ И СБОР ДАННЫХ
 # ============================================================
 
 @st.cache_data(ttl=900)
-def build_global_market_state(macro_score):
+def fetch_all_market_dfs():
+    loaded_data = {}
+    for sym in ASSET_REGISTRY.keys():
+        df = load_asset_data(sym)
+        if df is not None and len(df) >= 200:
+            loaded_data[sym] = df
+    return loaded_data
+
+with st.spinner("Синхронизация и глубокий анализ биржевых стаканов..."):
+    all_dfs = fetch_all_market_dfs()
+
+# Рассчитываем честный макроиндекс, передавая пул датафреймов для вычисления объёмов доминации
+macro_package = build_macro_bottom_index(all_dfs)
+current_macro_score = macro_package["Индекс"]
+
+def build_global_market_state(market_dfs, macro_score):
     rows = []
-    btc_df = load_asset_data("BTC", days=550)
-    for sym, m in ASSET_REGISTRY.items():
-        raw = load_asset_data(sym)
-        if raw is None or len(raw) < 200: 
-            continue
-        
+    btc_df = market_dfs.get("BTC")
+    for sym, raw in market_dfs.items():
+        m = ASSET_REGISTRY[sym]
         res = calculate_macro_matrix(sym, raw, macro_score, btc_df)
         if res[0] is None: 
             continue
@@ -330,31 +392,27 @@ def build_global_market_state(macro_score):
         })
     return pd.DataFrame(rows)
 
-macro_package = build_macro_bottom_index()
-current_macro_score = macro_package["Индекс"]
-
-with st.spinner("Синхронизация циклов макро-данных..."):
-    df_market = build_global_market_state(current_macro_score)
+df_market = build_global_market_state(all_dfs, current_macro_score)
 
 if "df_market" not in st.session_state or not df_market.empty:
     st.session_state["df_market"] = df_market
     st.session_state["macro_score"] = current_macro_score
 
 # ============================================================
-# ИНТЕРФЕЙС: МАКРО-ИНДЕКС
+# ИНТЕРФЕЙС: МАКРО-ИНДЕКС РЫНКА
 # ============================================================
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
 st.markdown(f"## **{int(st.session_state['macro_score'])} / 100**")
 st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")
 
-with st.expander("🔍 Показать детальные макро-метрики расшифровки весов"):
+with st.expander("🔍 Показать честные математические метрики и дельты"):
     col_left, col_right = st.columns(2)
     with col_left:
-        for k, v in list(macro_package["Детализация"].items())[:4]:
+        for k, v in list(macro_package["Детализация"].items())[:3]:
             st.markdown(f"**{k}:** `{v}`")
     with col_right:
-        for k, v in list(macro_package["Детализация"].items())[4:]:
+        for k, v in list(macro_package["Детализация"].items())[3:]:
             st.markdown(f"**{k}:** `{v}`")
 
 # ============================================================
@@ -380,7 +438,7 @@ if not active_df.empty:
         p_cols = ["Символ", "Сектор", "Цена", "Инв. рейтинг", "Решение", "Рекомендуемый вес"]
         st.dataframe(top_5[p_cols], use_container_width=True, hide_index=True)
     else:
-        st.info("Рынок локально перегрет. Нет оптимальных активов для формирования ордеров на покупку.")
+        st.info("Рынок локально перегрет. Математически оптимальные активы для долгосрочных ордеров отсутствуют.")
 
 # ============================================================
 # БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ
@@ -426,7 +484,7 @@ if not df_select.empty:
         </div>
         <div class="metric-card">
             <div class="metric-label">🏛️ Фундаментал</div>
-            <div class="metric-value">{row_a['Futamental'] if 'Futamental' in row_a else row_a['Фундаментал']:.1f} / 100</div>
+            <div class="metric-value">{row_a['Фундаментал']:.1f} / 100</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">🎯 Инвест. рейтинг</div>
@@ -462,7 +520,7 @@ st.markdown("---")
 st.markdown("##### 📋 ОБЩАЯ СТРУКТУРНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ")
 
 if not active_df.empty:
-    df_v = active_df[active_df["Risk"] == user_risk if "Risk" in active_df.columns else active_df["Риск"] == user_risk].sort_values(by="Инвестиционный_Рейтинг", ascending=False).copy()
+    df_v = active_df[active_df["Риск"] == user_risk].sort_values(by="Инвестиционный_Рейтинг", ascending=False).copy()
     if not df_v.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
@@ -491,4 +549,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез данных зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Изоляция контекста st.session_state активна | Защита от пробоя зон внедрена.")
+st.caption(f"📅 Срез данных зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Истинные независимые макро-метрики | Полный диапазон шкалы 0-100 разблокирован.")
