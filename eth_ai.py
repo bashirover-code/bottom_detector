@@ -142,7 +142,6 @@ def calculate_single_rs(df, btc_df, lookup_days):
     btc_t["d"] = btc_t["date"].dt.date
     
     inter = np.intersect1d(df_t['d'], btc_t['d'])
-    # Динамическая адаптация под торговые паузы традиционных рынков (акций)
     effective_lookup = min(len(inter), lookup_days)
     
     if effective_lookup > 5:
@@ -161,7 +160,6 @@ def calculate_single_rs(df, btc_df, lookup_days):
 
 @st.cache_data(ttl=1800)
 def build_macro_bottom_index():
-    # 1. Fear & Greed с обработкой сетевого сбоя
     try:
         res = requests.get("https://api.alternative.me/fng/", timeout=5).json()
         f_g_val = int(res['data'][0]['value'])
@@ -169,7 +167,6 @@ def build_macro_bottom_index():
         st.error(f"Сбой макро-API Fear&Greed: {e}. Применен аварийный дефолт (нейтрально).")
         f_g_val = 50
 
-    # 2. Динамический расчет Mayer Multiple и MVRV-прокси по реальному графику BTC
     btc_data = load_asset_data("BTC", days=450)
     deviation_btc_high = 0.0
     mayer_val = 1.0
@@ -188,14 +185,12 @@ def build_macro_bottom_index():
         btc_high_zone = BOTTOM_ZONES["BTC"][1]
         deviation_btc_high = ((c_p - btc_high_zone) / btc_high_zone) * 100
         
-        # Динамический прокси доминации и альтсезона на базе импульса BTC к объёмам
         btc_momentum = (c_p / btc_data["close"].iloc[-30] - 1) * 100
         btc_dom_est = max(40.0, min(70.0, 52.0 + (btc_momentum * 0.15)))
         alt_index_est = max(5.0, min(95.0, 50.0 - (btc_momentum * 0.4)))
     else:
         st.warning("Не удалось рассчитать динамический Mayer Multiple. Применены базовые константы.")
 
-    # Динамический скоринг факторов макро-матрицы
     mvrv_score = 20 if mayer_val < 0.9 else 12
     mayer_score = 20 if mayer_val <= 0.80 else 15 if mayer_val <= 1.0 else 5
     fg_score = 15 if f_g_val <= 25 else 10 if f_g_val <= 50 else 2
@@ -206,7 +201,6 @@ def build_macro_bottom_index():
     
     total_macro_index = mvrv_score + mayer_score + fg_score + nupl_score + pi_score + dom_score + alt_score
     
-    # Жесткое заземление индекса при отсутствии капитуляции
     if f_g_val > 20 or deviation_btc_high > 5.0:
         total_macro_index = min(total_macro_index, 82)
     else:
@@ -238,7 +232,6 @@ def build_macro_bottom_index():
 # ============================================================
 
 def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
-    # Явный перехват отсутствия зон
     zone = BOTTOM_ZONES.get(symbol)
     if not zone or df is None or len(df) < 200: 
         return (None,) * 13
@@ -250,7 +243,6 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     df["dollar_volume"] = df["close"] * df["volume"]
     
-    # 🏛️ Расчет Фундаментала (бывшее Качество)
     avg_dollar_volume = df["dollar_volume"].tail(30).mean()
     quality_vol_score = 100 if avg_dollar_volume > 50_000_000 else 70 if avg_dollar_volume > 5_000_000 else 25
     
@@ -269,11 +261,10 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
     low_zone, high_zone = zone[0], zone[1]
     deviation_high_pct = ((current_price - high_zone) / high_zone) * 100
     
-    # Линейный штраф без искусственных max(70) при падении ниже зоны
     if current_price <= high_zone:
-        if current_price < low_zone:
+        if current_price < low_zone and low_zone > 0:
             oversold_ratio = (low_zone - current_price) / low_zone
-            bottom_score = max(0.0, 100.0 - (oversold_ratio * 150.0))  # Падение скора при пробое дна
+            bottom_score = max(0.0, 100.0 - (oversold_ratio * 150.0))
             status_zone = "Ниже зоны"
         else:
             bottom_score = 100.0
@@ -289,11 +280,9 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
     
     asset_score = (0.40 * fundamental_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
     
-    # ИНВЕСТИЦИОННЫЙ РЕЙТИНГ (Синергия 70/30)
     investment_rating = (0.70 * asset_score) + (0.30 * macro_bottom_score)
     investment_rating = max(0.0, min(investment_rating, 100.0))
     
-    # Торговая матрица сигналов по дельте
     if current_price <= high_zone:
         decision = "⭐ Покупка"
     elif 0.0 < deviation_high_pct <= 5.0:
@@ -303,7 +292,6 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None):
     else:
         decision = "🔴 Перегрев"
         
-    # Имитация исторических срезов для динамики
     price_30d_ago = df["close"].iloc[-30] if len(df) >= 30 else current_price
     delta_price_30d = ((current_price - price_30d_ago) / price_30d_ago) * 100
     
@@ -342,14 +330,12 @@ def build_global_market_state(macro_score):
         })
     return pd.DataFrame(rows)
 
-# Сборка макро-пакета
 macro_package = build_macro_bottom_index()
 current_macro_score = macro_package["Индекс"]
 
 with st.spinner("Синхронизация циклов макро-данных..."):
     df_market = build_global_market_state(current_macro_score)
 
-# Запись в session_state для изоляции от NameError
 if "df_market" not in st.session_state or not df_market.empty:
     st.session_state["df_market"] = df_market
     st.session_state["macro_score"] = current_macro_score
@@ -440,7 +426,7 @@ if not df_select.empty:
         </div>
         <div class="metric-card">
             <div class="metric-label">🏛️ Фундаментал</div>
-            <div class="metric-value">{row_a['Фундаментал']:.1f} / 100</div>
+            <div class="metric-value">{row_a['Futamental'] if 'Futamental' in row_a else row_a['Фундаментал']:.1f} / 100</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">🎯 Инвест. рейтинг</div>
@@ -455,7 +441,7 @@ if not df_select.empty:
     with c_trend:
         st.markdown(f"⚡ **Сила тренда инвестиционного рейтинга:** `{row_a['Тренд_Силы']}`")
 
-    with St.expander("📝 Методика расчета и ордерные сетки диапазона"):
+    with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -476,7 +462,7 @@ st.markdown("---")
 st.markdown("##### 📋 ОБЩАЯ СТРУКТУРНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ")
 
 if not active_df.empty:
-    df_v = active_df[active_df["Риск"] == user_risk].sort_values(by="Инвестиционный_Рейтинг", ascending=False).copy()
+    df_v = active_df[active_df["Risk"] == user_risk if "Risk" in active_df.columns else active_df["Риск"] == user_risk].sort_values(by="Инвестиционный_Рейтинг", ascending=False).copy()
     if not df_v.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
