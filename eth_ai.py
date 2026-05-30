@@ -150,7 +150,7 @@ def build_macro_bottom_index():
     try:
         f_g_val = int(requests.get("https://api.alternative.me/fng/", timeout=5).json()['data'][0]['value'])
     except:
-        f_g_val = 23  # Историческое значение паники из вашего примера
+        f_g_val = 23  # Дефолтное значение паники
 
     btc_data = load_asset_data("BTC", days=400)
     if btc_data is not None and len(btc_data) > 350:
@@ -162,19 +162,18 @@ def build_macro_bottom_index():
     else:
         mayer_val, pi_green = 0.79, True
 
-    # 1. Сборка весов по вашей матрице факторов (Сумма = 100)
-    mvrv_score = 20 if mayer_val < 0.9 else 12  # Имитация спреда MVRV
+    # Сборка весов по матрице факторов
+    mvrv_score = 20 if mayer_val < 0.9 else 12
     mayer_score = 20 if mayer_val <= 0.80 else 15 if mayer_val <= 1.0 else 5
     fg_score = 15 if f_g_val <= 25 else 10 if f_g_val <= 50 else 2
-    nupl_score = 15 if mayer_val < 0.85 else 10 # Корреляция NUPL с Mayer
+    nupl_score = 15 if mayer_val < 0.85 else 10
     pi_score = 10 if pi_green else 0
-    dom_score = 10  # BTC Dominance > 55%
-    alt_score = 5   # Altseason < 25%
+    dom_score = 10
+    alt_score = 5
     
     total_macro_index = mvrv_score + mayer_score + fg_score + nupl_score + pi_score + dom_score + alt_score
     total_macro_index = max(0, min(total_macro_index, 100))
 
-    # Определение фазы
     if total_macro_index >= 80:
         phase_text = "🟢 Фаза циклического дна. Вероятность формирования глобального минимума высокая."
     elif total_macro_index >= 55:
@@ -200,11 +199,11 @@ macro_package = build_macro_bottom_index()
 macro_bottom_score = macro_package["Индекс"]
 
 # ============================================================
-# МОДЕРНИЗИРОВАННОЕ МАТЕМАТИЧЕСКОЕ ЯДРО (Новый аудит)
+# МОДЕРНИЗИРОВАННОЕ МАТЕМАТИЧЕСКОЕ ЯДРО
 # ============================================================
 
 def calculate_macro_matrix(symbol, df, btc_df=None):
-    if df is None or len(df) < 200: return (None,) * 12
+    if df is None or len(df) < 200: return (None,) * 11
     df = df.copy()
     
     current_price = df["close"].iloc[-1]
@@ -212,7 +211,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     df["dollar_volume"] = df["close"] * df["volume"]
     
-    # Расчет базового рейтинга качества актива
+    # Расчет рейтинга качества актива
     avg_dollar_volume = df["dollar_volume"].tail(30).mean()
     quality_vol_score = 100 if avg_dollar_volume > 50_000_000 else 70 if avg_dollar_volume > 5_000_000 else 25
     
@@ -228,7 +227,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     quality_rating = (0.45 * quality_vol_score) + (0.35 * rs_score) + (0.20 * structure_score)
     quality_rating = max(0, min(quality_rating, 100))
     
-    # ИСПРАВЛЕННАЯ НЕЛИНЕЙНАЯ ЛОГИКА: Близость к зоне покупки (Ваше ТЗ)
+    # Нелинейная логика: Близость к зоне покупки
     zone = BOTTOM_ZONES.get(symbol, (current_price * 0.8, current_price * 0.9))
     low_zone, high_zone = zone[0], zone[1]
     
@@ -244,7 +243,6 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     else:
         overprice = (current_price - high_zone) / high_zone
         bottom_score = max(0.0, 100.0 - overprice * 150.0)
-        # Мягкие и жесткие границы фаз над зоной накопления
         if deviation_high_pct <= 15.0:
             status_zone = f"🟡 Над зоной покупки {deviation_high_pct:+.1f}%"
         else:
@@ -258,18 +256,17 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     # Сборка локального скора актива
     asset_score = (0.40 * quality_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
     
-    # СИНЕРГЕТИЧЕСКАЯ ФОРМУЛА: Связываем локальный актив и Глобальное Макро (70/30)
+    # Синергетическая формула (70% актив + 30% макро)
     final_score = (0.70 * asset_score) + (0.30 * macro_bottom_score)
     final_score = max(0.0, min(final_score, 100.0))
     
-    # Текстовый потенциал на основе синергетического итога
     if final_score >= 75: potential_text = "Высокий"
     elif final_score >= 50: potential_text = "Средний"
     else: potential_text = "Низкий"
     
-    # ЖЕСТКИЙ ФИЛЬТР ПЕРЕГРЕВА: Блокировка сигналов при выходе > 15% от зоны дна
+    # Жесткий фильтр перегрева
     if current_price > (high_zone * 1.15):
-        decision = "👁 Наблюдение"
+        decision = "👁 Наблюнение"
     else:
         if quality_rating < 45:
             decision = "❌ Игнор"
@@ -309,7 +306,7 @@ with st.spinner("Синхронизация циклов макро-данных
     df_market = build_global_market_state()
 
 # ============================================================
-# ИНТЕГРИРОВАННЫЙ МАКРО-ИНДЕКС РЫНКА (Ваше ТЗ)
+# ИНТЕГРИРОВАННЫЙ МАКРО-ИНДЕКС РЫНКА
 # ============================================================
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
@@ -333,7 +330,7 @@ with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
     user_risk = st.radio("🛡️ Выберите категорию риска актива:", ["Низкий", "Средний", "Высокий"])
     
-    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    allowed_assets = df_market[df_market["Risk"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: allowed_assets = list(BOTTOM_ZONES.keys())
     
     asset = st.selectbox("Выбор актива для детального разбора:", allowed_assets)
@@ -350,7 +347,6 @@ if not df_select.empty:
     
     price_formatted = f"${row_a['Цена']:,.4f}" if row_a['Цена'] < 1 else f"${row_a['Цена']:,.2f}"
     
-    # 5 идеально выверенных симметричных блоков
     st.markdown(f"""
     <div class="metric-container">
         <div class="metric-card">
@@ -376,7 +372,7 @@ if not df_select.empty:
     </div>
     """, unsafe_allow_html=True)
 
-    # СКРЫТЫЙ БЛОК МЕТОДИКИ (Вынос шума)
+    # СКРЫТЫЙ БЛОК МЕТОДИКИ
     with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
         dev_pct = ((row_a['Цена'] - raw_zone[1]) / raw_zone[1]) * 100 if raw_zone[1] > 0 else 0
