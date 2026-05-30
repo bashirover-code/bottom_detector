@@ -57,7 +57,7 @@ COINGECKO_IDS = {
 # 2. ЗАГРУЗКА ДАННЫХ С СИНХРОННЫМ КЭШЕМ (15 МИНУТ)
 # ============================================================
 
-@st.cache_data(ttl=900) # Кэш выровнен под 15 минут
+@st.cache_data(ttl=900)
 def load_crypto_data(symbol, days=550):
     if "CRYPTOCOMPARE_KEY" in st.secrets:
         try:
@@ -83,7 +83,7 @@ def load_crypto_data(symbol, days=550):
     except:
         return None
 
-@st.cache_data(ttl=900) # Кэш выровнен под 15 минут
+@st.cache_data(ttl=900)
 def load_stock_data(symbol, days=550):
     try:
         s = yf.Ticker(symbol)
@@ -95,7 +95,7 @@ def load_stock_data(symbol, days=550):
     except:
         return None
 
-@st.cache_data(ttl=3600) # Защита API от лимитов (1 час)
+@st.cache_data(ttl=3600)
 def get_coingecko_fundamentals(coin_id):
     try:
         api_key = st.secrets.get("COINGECKO_API_KEY")
@@ -119,7 +119,7 @@ def get_coingecko_fundamentals(coin_id):
         pass
     return None
 
-@st.cache_data(ttl=900) # Кэш выровнен под 15 минут
+@st.cache_data(ttl=900)
 def get_market_regime():
     btc_df = load_crypto_data("BTC", days=300)
     if btc_df is not None and len(btc_df) >= 200:
@@ -234,14 +234,13 @@ def calculate_metrics_adaptive(df, btc_df=None):
     low_t, up_t = get_adaptive_thresholds(df["z_score"].values)
     dv_bull = detect_rsi_divergence(df, 35)
     
-    # СЛОВАРЬ ДЛЯ ФОРМИРОВАНИЯ БЛОКА ПРИЧИН
     reasons_checklist = []
     bottom_score = 0
     
     # 1. ФАКТОР ПРОСАДКИ (Повышенный вес: макс 35 баллов)
     if drawdown_pct <= -85: 
         bottom_score += 35
-        reasons_checklist.append(("✅ Критическая просадкa >85%", True))
+        reasons_checklist.append(("✅ Критическая просадка >85%", True))
     elif drawdown_pct <= -70: 
         bottom_score += 28
         reasons_checklist.append(("✅ Экстремальная просадка >70%", True))
@@ -430,27 +429,26 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# НОВЫЙ ПРАКТИЧЕСКИЙ БЛОК: ПРИЧИНЫ ОЦЕНКИ ДНА
+# ПРИЧИНЫ ОЦЕНКИ ДНА (ОПТИМИЗИРОВАННЫЙ СПИСОК)
 # ============================================================
 st.subheader("📋 Причины формирования текущей оценки дна")
 with st.container():
     rc1, rc2 = st.columns(2)
     with rc1:
-        # Выводим выполненные условия (накопление силы дна)
         st.markdown("**Условия, добавившие баллы к Индексу Дна:**")
         fulfilled = [r[0] for r in reasons if r[1]]
         if fulfilled:
             for item in fulfilled:
-                st.markdown(item)
+                st.markdown(f"- {item}")
         else:
             st.caption("Ни одно из условий формирования дна не выполнено.")
             
     with rc2:
-        # Выводим невыполненные условия (ограничители роста индекса)
         st.markdown("**Невыполненные / Пропущенные триггеры дна:**")
         unfulfilled = [r[0] for r in reasons if not r[1]]
-        for item in unfulfilled:
-            st.markdown(item)
+        if unfulfilled:
+            for item in unfulfilled:
+                st.markdown(f"- {item}")
 
 # ИИ-ИНТЕГРАЦИЯ DEEPSEEK
 st.markdown("---")
@@ -469,7 +467,7 @@ if st.button("🧠 Запустить экспресс-анализ ИИ DeepSee
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 8. ГРАФИК ЦЕНЫ
+# 8. ГРАФИК ЦЕНЫ (ИСПРАВЛЕН ПАРАМЕТР DASH)
 # ============================================================
 st.markdown("---")
 st.subheader("📈 ИНТЕРАКТИВНЫЙ ТРЕНД (Цветовая палитра на базе Z-Score к MA90)")
@@ -495,8 +493,9 @@ for i in range(len(df_chart) - 1):
         showlegend=False, hoverinfo="skip"
     ))
 
+# ИСПРАВЛЕНИЕ: Используем стандартные стили 'dot' и 'dash'
 if "ma90" in df_chart.columns:
-    fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma90"], mode="lines", name="MA90", line=dict(color="#ffffff", width=1.2, dash="dot grandfathered"), opacity=0.4))
+    fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma90"], mode="lines", name="MA90", line=dict(color="#ffffff", width=1.2, dash="dot"), opacity=0.4))
 if "ma200" in df_chart.columns:
     fig.add_trace(go.Scatter(x=df_chart["date"], y=df_chart["ma200"], mode="lines", name="MA200", line=dict(color="#f59e0b", width=1.5, dash="dash"), opacity=0.6))
 
@@ -529,7 +528,7 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown("---")
 st.subheader("📋 СКВОЗНАЯ МАТРИЦА СКОРИНГА РЫНКОВ v4.3")
 
-@st.cache_data(ttl=900) # Выровнено строго под 15 минут
+@st.cache_data(ttl=900)
 def build_summary_table():
     all_assets = {**{c: "Криптовалюта" for c in CRYPTO_LIST}, **{s: "Акция" for s in STOCK_LIST}}
     rows = []
@@ -550,7 +549,6 @@ def build_summary_table():
         
         t_fdv_risk = "N/A" if atype == "Акция" else "📜 Карточка актива"
         
-        # Очистка эмодзи для построения таблицы
         clean_sig = sig
         for emoji in ["🔴", "🟡", "🟢", "⚪"]:
             clean_sig = clean_sig.replace(emoji, "")
