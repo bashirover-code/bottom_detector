@@ -15,7 +15,7 @@ st.set_page_config(page_title="Детектор дна активов v4.0", lay
 st.markdown("""
     <meta http-equiv="refresh" content="300">
     <style>
-        html, body, [class*=\"css\"], .stMarkdown, .stMetric, .stDataFrame,
+        html, body, [class*="css"], .stMarkdown, .stMetric, .stDataFrame,
         .stButton, .stSelectbox, .stRadio, .stCaption, h1, h2, h3, h4, p, div {
             font-family: 'Times New Roman', Times, serif !important;
         }
@@ -325,7 +325,7 @@ def call_deepseek_v3(asset, price, z, bottom_score, sig, rsi, vol_z, div, stress
     if not key:
         return "❌ Ключ интеграции ИИ DeepSeek отсутствует."
         
-    f_text = f"Капитализация: ${fund['market_cap']:,.0f}, Риск токеномики (FDV Risk): {fdv_risk}." if (fund and isinstance(fund, dict) and "market_cap" in fund) else "Фундаментальные ончейн-данные отсутствуют (традиционный актив)."
+    f_text = f"Капитализация: ${fund.get('market_cap', 0):,.0f}, Риск токеномики (FDV Risk): {fdv_risk}." if (fund and isinstance(fund, dict) and fund.get('market_cap')) else "Фундаментальные ончейн-данные отсутствуют (традиционный актив)."
         
     prompt = f"""Проведи глубокий экспресс-анализ {asset}:
 МЕТРИКИ v4.0: Цена: ${price:,.4f}, Z-Score: {z:.2f}, RSI: {rsi:.1f}, Просадка от годового максимума: {drawdown:.1f}%, Объём: {vol_z:+.1f}σ, Бычий паттерн дивергенции: {'ДА' if div else 'НЕТ'}.
@@ -384,7 +384,7 @@ fund = None
 fdv_risk = "UNKNOWN"
 if is_c and asset in COINGECKO_IDS:
     fund = get_coingecko_fundamentals(COINGECKO_IDS[asset])
-    if fund:
+    if fund and isinstance(fund, dict):
         mcap = fund.get("market_cap", 0)
         fdv = fund.get("fully_diluted_valuation", 0)
         fdv_ratio = fdv / mcap if mcap > 0 else 1
@@ -407,7 +407,7 @@ sig_t, sig_c = get_signal_adaptive(c_z, low_thr, upper_thr, is_v)
 stress = analyze_stress_tests(df)
 
 # ============================================================
-# НОВЫЙ ВЕРХНИЙ ДАШБОРД V4.0
+# ВЕРХНИЙ ДАШБОРД V4.0
 # ============================================================
 
 st.header(f"📊 Паспорт актива: {asset}")
@@ -426,7 +426,7 @@ with c4: st.metric("📈 RSI (14)", f"{c_rsi:.1f}")
 with c5: st.metric("📦 ОБЪЁМ COOLDOWN", f"{c_vol_z:+.2f}σ")
 
 # ============================================================
-# НОВАЯ СТРОКА СТАТУСА V4.0
+# СТРОКА СТАТУСА V4.0
 # ============================================================
 
 st.markdown(f"""
@@ -463,7 +463,7 @@ with sc2:
         </div>
     """, unsafe_allow_html=True)
 
-# AI АНАЛИЗ (ВЫЗОВ СТРОГО ПО ИМЕНАМ ПЕРЕМЕННЫХ)
+# AI АНАЛИЗ
 st.markdown("---")
 if st.button("🧠 Запустить нейросетевой аудит DeepSeek v3", type="primary"):
     with st.spinner("Нейросеть сканирует профили рисков токеномики и просадки..."):
@@ -573,7 +573,7 @@ def build_summary_table():
         t_fdv_risk = "—"
         if atype == "Криптовалюта" and symbol in COINGECKO_IDS:
             f_data = get_coingecko_fundamentals(COINGECKO_IDS[symbol])
-            if f_data:
+            if f_data and isinstance(f_data, dict):
                 mc = f_data.get("market_cap", 0)
                 fd = f_data.get("fully_diluted_valuation", 0)
                 ratio = fd / mc if mc > 0 else 1
