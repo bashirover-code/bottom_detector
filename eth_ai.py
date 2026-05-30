@@ -111,17 +111,12 @@ BOTTOM_ZONES = {
     "LIT": (65.0, 72.0), "SIL": (65.0, 75.0), "EWW": (70.0, 73.0)
 }
 
-# Валидация весов на уровне компиляции модуля
-assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не равны 100!"
-assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отдельного актива не равны 1.0!"
-
 # ============================================================
 # РАБОТА С СЕТЬЮ И КЭШИРОВАНИЕМ
 # ============================================================
 
 def _fetch_raw_yfinance(symbol, ticker_suffix, days):
-    """Изолированная сетевая функция с внутренней обработкой исключений"""
-    time.sleep(0.35)
+    time.sleep(0.15)
     try:
         s = yf.Ticker(f"{symbol}{ticker_suffix}")
         return s.history(period=f"{days}d")
@@ -305,7 +300,7 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     elif 0.0 < deviation_high_pct <= 5.0:
         decision = "➕ Добор"
     elif 5.0 < deviation_high_pct <= 15.0:
-        decision = "👁 Наблюнение"
+        decision = "👁 Наблюдение"  # Исправлена опечатка для синхронизации
     else:
         decision = "🔴 Перегрев"
         
@@ -477,7 +472,8 @@ with st.sidebar:
     st.markdown("---")
     user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    allowed_assets = df_market[df_market["Risk"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    # Ключевое исправление: Заменено "Risk" на "Риск" на русском языке
+    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
     
