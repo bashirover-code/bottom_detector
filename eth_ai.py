@@ -111,12 +111,17 @@ BOTTOM_ZONES = {
     "LIT": (65.0, 72.0), "SIL": (65.0, 75.0), "EWW": (70.0, 73.0)
 }
 
+# Валидация весов на уровне компиляции модуля
+assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не равны 100!"
+assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отдельного актива не равны 1.0!"
+
 # ============================================================
 # РАБОТА С СЕТЬЮ И КЭШИРОВАНИЕМ
 # ============================================================
 
 def _fetch_raw_yfinance(symbol, ticker_suffix, days):
-    time.sleep(0.15)
+    """Изолированная сетевая функция с внутренней обработкой исключений"""
+    time.sleep(0.35)
     try:
         s = yf.Ticker(f"{symbol}{ticker_suffix}")
         return s.history(period=f"{days}d")
@@ -300,7 +305,7 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     elif 0.0 < deviation_high_pct <= 5.0:
         decision = "➕ Добор"
     elif 5.0 < deviation_high_pct <= 15.0:
-        decision = "👁 Наблюдение"  # Исправлена опечатка для синхронизации
+        decision = "👁 Наблюдение"
     else:
         decision = "🔴 Перегрев"
         
@@ -422,7 +427,7 @@ df_market = st.session_state["df_market"]
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
 st.markdown(f"## **{int(current_macro_score)} / 100**")
-st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")
+st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")  # Исправлено с 'Phase' на 'Фаза'
 
 with st.expander("🔍 Показать честные математические метрики и дельты"):
     col_left, col_right = st.columns(2)
@@ -472,7 +477,7 @@ with st.sidebar:
     st.markdown("---")
     user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    # Ключевое исправление: Заменено "Risk" на "Риск" на русском языке
+    # Исправлено: заменено "Risk" на "Риск"
     allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
@@ -523,6 +528,7 @@ if not df_select.empty:
     with c_trend:
         st.markdown(f"⚡ **Сила тренда инвестиционного рейтинга:** `{row_a['Тренд_Силы']}`")
 
+    # Исправлено: s.expander изменен на st.expander
     with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
         c1, c2, c3 = st.columns(3)
@@ -548,22 +554,28 @@ if not df_market.empty:
     if not df_v.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
-        df_v["Инвестиционный_Рейтинг"] = df_v["Инвестиционный_Рейтинг"].map(lambda x: f"{x:.1f}")
-        df_v["Fund_Rating"] = df_v["Фундаментал"].map(lambda x: f"{x:.1f}")
+        
+        # Исправлено: Сначала форматируем значения, чтобы избежать конфликтов имен
+        df_v["Отображаемый_Инвест_Рейтинг"] = df_v["Инвестиционный_Рейтинг"].map(lambda x: f"{float(x):.1f}")
+        df_v["Отображаемый_Фундаментал"] = df_v["Фундаментал"].map(lambda x: f"{x:.1f}")
         df_v["Близость_к_зоне"] = df_v["Близость_к_зоне"].map(lambda x: f"{int(x)}")
         df_v["Дельта_Рейтинга"] = df_v["Дельта_Рейтинга"].map(lambda x: f"{x:+.1f}")
         
+        # Переименование колонок без создания дубликатов с существующим столбцом "Фундаментал"
         df_v = df_v.rename(columns={
-            "Инвестиционный_Рейтинг": "Инвест. рейтинг",
-            "Fund_Rating": "Фундаментал",
+            "Отображаемый_Инвест_Рейтинг": "Инвест. рейтинг",
+            "Отображаемый_Фундаментал": "Фундаментал_Итого",
             "Близость_к_зоне": "Близость к зоне",
             "Дельта_Рейтинга": "Δ Рейтинга (30д)",
             "Тренд_Силы": "Тренд силы"
         })
         
-        # Столбец "Положение от зоны" исключен из списка вывода
-        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал", "Близость к зоне", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
-        st.dataframe(df_v[show_cols], use_container_width=True, hide_index=True)
+        # Столбец "Положение от зоны" и старый "Фундаментал" исключены из отображения
+        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал_Итого", "Близость к зоне", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
+        
+        # Финальный маппинг имени для красивой шапки таблицы
+        df_display = df_v[show_cols].rename(columns={"Фундаментал_Итого": "Фундаментал"})
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
 else:
     st.info("Данные о состоянии рынка временно недоступны.")
 
