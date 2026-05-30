@@ -206,7 +206,10 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     else:
         recovery_score = 0.0
         
-    opportunity_score = 100 - recovery_score
+    opportunity =
+    0.4 * drawdown_score +
+    0.3 * rs_recovery_score +
+    0.3 * accumulation_score
 
     # Многофакторный расчет Strength (избегаем насыщения 100 баллов)
     strength_score = (quality_vol_score * 0.3) + (rs_score * 0.5) + (recovery_score * 0.2)
