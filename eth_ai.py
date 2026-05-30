@@ -111,14 +111,12 @@ BOTTOM_ZONES = {
     "LIT": (65.0, 72.0), "SIL": (65.0, 75.0), "EWW": (70.0, 73.0)
 }
 
-# ============================================================
-# КОНТРОЛЬ ВЕСОВ НА УРОВНЕ МОДУЛЯ (Проблема №1 и №6)
-# ============================================================
-assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Критическая ошибка: Веса макро-индекса в сумме не равны 100!"
-assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Критическая ошибка: Веса скоринга отдельного актива не равны 1.0!"
+# Глобальный аудит весов при компиляции модуля
+assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не сходятся!"
+assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отдельного актива не равны 1.0!"
 
 # ============================================================
-# ЧИСТЫЙ КЭШ ДАННЫХ БЕЗ СНА ВНУТРИ (Проблема №4)
+# ЗАГРУЗЧИК БИРЖЕВЫХ ДАННЫХ
 # ============================================================
 
 @st.cache_data(ttl=900)
@@ -140,7 +138,6 @@ def load_asset_data(symbol, days=1500):
         return None
 
 def calculate_single_rs(df_t, btc_t, lookup_days):
-    """Принимает уже готовые срезы датафреймов, без дублирования end_idx (Проблема №2)"""
     if btc_t is None or len(df_t) < 10 or len(btc_t) < 10: 
         return 0.0
         
@@ -164,7 +161,7 @@ def calculate_single_rs(df_t, btc_t, lookup_days):
     return 0.0
 
 # ============================================================
-# РАСЧЕТ РЕАЛЬНОГО МАКРО-ИНДЕКСА 
+# МАКРО-МОДУЛЬ РЫНКА
 # ============================================================
 
 def build_macro_bottom_index(volume_perf_data):
@@ -183,18 +180,15 @@ def build_macro_bottom_index(volume_perf_data):
     if btc_data is not None and len(btc_data) > 1400:
         c_p = btc_data["close"].iloc[-1]
         
-        # Mayer Multiple
         ma350 = btc_data["close"].rolling(350).mean().iloc[-1]
         mayer_val = c_p / ma350 if ma350 > 0 else 1.0
         
-        # Logarithmic Regression Error (LRE)
         btc_data['log_p'] = np.log10(btc_data['close'])
         x = np.arange(len(btc_data))
         slope, intercept = np.polyfit(x, btc_data['log_p'], 1)
         expected_log_p = slope * x[-1] + intercept
         lre_val = btc_data['log_p'].iloc[-1] - expected_log_p
         
-        # 200WMA Distance
         ma1400 = btc_data["close"].rolling(1400).mean().iloc[-1]
         wma200_dist = c_p / ma1400 if ma1400 > 0 else 1.0
 
@@ -220,7 +214,7 @@ def build_macro_bottom_index(volume_perf_data):
 
     return {
         "Индекс": total_macro_index,
-        "Phase": phase_text,
+        "Фаза": phase_text,
         "Детализация": {
             "Mayer Multiple (BTC)": f"{mayer_val:.2f} [+{mayer_score}]",
             "Log Regression Error (LRE)": f"{lre_val:+.3f} [+{lre_score}]",
@@ -232,11 +226,10 @@ def build_macro_bottom_index(volume_perf_data):
     }
 
 # ============================================================
-# МАТЕМАТИЧЕСКОЕ ЯДРО СКОРИНГА АКТИВОВ 
+# МАТЕМАТИЧЕСКИЙ МАТРИЧНЫЙ СКОРИНГ
 # ============================================================
 
 def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=None):
-    """Ассерты удалены из рантайма для ускорения перерисовок UI (Проблема №1)"""
     zone = BOTTOM_ZONES.get(symbol)
     if not zone or df is None or len(df) < 200: 
         return (None,) * 13
@@ -254,7 +247,6 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     avg_dollar_volume = working_df["dollar_volume"].tail(30).mean()
     quality_vol_score = 100 if avg_dollar_volume > 50_000_000 else 70 if avg_dollar_volume > 5_000_000 else 25
     
-    # Отрезаем BTC граф синхронно под длину рабочего фрейма (Проблема №2)
     working_btc = btc_df.iloc[:end_idx].copy() if (btc_df is not None and end_idx is not None) else btc_df
     
     rs30 = calculate_single_rs(working_df, working_btc, 30)
@@ -279,7 +271,6 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
             bottom_score = max(0.0, 100.0 - (oversold_ratio * 150.0))
             status_zone = f"Ниже дна на {abs(deviation_low_pct):.1f}%"
             
-            # Защитный триггер от покупки падающих скам-ножей
             if deviation_low_pct < -30.0:
                 is_free_fall = True
         else:
@@ -317,10 +308,6 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
             fundamental_rating, investment_rating, decision, drawdown_pct, 
             deviation_high_pct, 0.0, 0.0, "🟡 Расчет")
 
-# ============================================================
-# ПОДЛИННЫЙ ИСТОРИЧЕСКИЙ АУДИТ
-# ============================================================
-
 def calculate_historical_rating(symbol, df, btc_df, macro_score):
     if df is None or len(df) < 40:
         return 50.0
@@ -328,7 +315,6 @@ def calculate_historical_rating(symbol, df, btc_df, macro_score):
     target_date = df["date"].iloc[-1] - timedelta(days=30)
     sub_df = df[df["date"] <= target_date]
     
-    # Решение проблемы №3: безопасный возврат нейтрального рейтинга вместо цены
     if sub_df.empty or len(sub_df) < 10:
         return 50.0
         
@@ -338,7 +324,7 @@ def calculate_historical_rating(symbol, df, btc_df, macro_score):
     return res_hist[6] if res_hist[6] is not None else 50.0
 
 # ============================================================
-# СБОР ДАННЫХ С КОНТРОЛЕМ ИНТЕРВАЛОВ ЗАПРОСОВ (Проблема №4)
+# ПОТОК ЗАПРОСОВ К API YAHOO FINANCE С ЗАЩИТОЙ ОТ БАНОВ
 # ============================================================
 
 @st.cache_data(ttl=900)
@@ -346,14 +332,13 @@ def fetch_all_market_dfs():
     loaded_data = {}
     for sym in ASSET_REGISTRY.keys():
         df = load_asset_data(sym)
-        # Задержка выполняется строго здесь, не блокируя повторный вызов кэша
-        time.sleep(0.35)
+        time.sleep(0.35)  # Сон вынесен из кэшируемой функции сюда
         if df is not None and len(df) >= 200:
             loaded_data[sym] = df
     return loaded_data
 
 # ============================================================
-# ИНИЦИАЛИЗАЦИЯ И СИНХРОНИЗАЦИЯ ПОТОКОВ
+# СИНХРОНИЗАЦИЯ СТЕКА ДАННЫХ И СЕССИИ
 # ============================================================
 
 with st.spinner("Синхронизация и глубокий анализ биржевых стаканов..."):
@@ -431,7 +416,7 @@ df_market = st.session_state["df_market"]
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
 st.markdown(f"## **{int(current_macro_score)} / 100**")
-st.markdown(f"**Оценка фазы:** {macro_package['Phase']}")
+st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")
 
 with st.expander("🔍 Показать честные математические метрики и дельты"):
     col_left, col_right = st.columns(2)
@@ -466,14 +451,15 @@ if not df_market.empty:
         st.info("Рынок локально перегрет либо находится в фазе жесткой капитуляции. Безопасные точки входа отсутствуют.")
 
 # ============================================================
-# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ
+# БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ (СИНХРОНИЗИРОВАНО С КИРИЛЛИЦЕЙ)
 # ============================================================
 
 with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
     user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    allowed_assets = df_market[df_market["Risk"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    # Исправлена ошибка KeyError: "Risk" -> заменено на кириллический ключ "Риск"
+    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
     
@@ -572,4 +558,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Модульные ассерты активны | Исторический аудит изолирован | Оптимизация задержек Yahoo Finance.")
+st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Все регистры и ключи таблиц успешно синхронизированы.")
