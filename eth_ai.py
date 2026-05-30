@@ -20,27 +20,27 @@ st.markdown("""
         }
         .metric-container {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 10px;
             margin-bottom: 15px;
         }
         .metric-card {
             background: #1e293b;
-            padding: 14px;
+            padding: 12px;
             border-radius: 8px;
             border: 1px solid #334155;
             text-align: center;
         }
         .metric-label {
-            font-size: 11px;
+            font-size: 10px;
             color: #94a3b8;
             font-weight: bold;
             letter-spacing: 0.5px;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             text-transform: uppercase;
         }
         .metric-value {
-            font-size: 19px;
+            font-size: 17px;
             color: #ffffff;
             font-weight: bold;
             white-space: nowrap;
@@ -111,17 +111,54 @@ BOTTOM_ZONES = {
     "LIT": (65.0, 72.0), "SIL": (65.0, 75.0), "EWW": (70.0, 73.0)
 }
 
-# Валидация весов на уровне компиляции модуля
-assert 20 + 20 + 20 + 15 + 15 + 10 == 100, "Веса макро-индекса не равны 100!"
-assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отдельного актива не равны 1.0!"
+SURVIVAL_REGISTRY = {
+    "BTC":    {"age": 100, "cap": 100, "cycles": 100, "class": 100},
+    "ETH":    {"age": 100, "cap": 100, "cycles": 100, "class": 95},
+    "LINK":   {"age": 100, "cap": 80,  "cycles": 100, "class": 90},
+    "SOL":    {"age": 80,  "cap": 80,  "cycles": 80,  "class": 80},
+    "NEAR":   {"age": 80,  "cap": 60,  "cycles": 80,  "class": 75},
+    "FIL":    {"age": 80,  "cap": 40,  "cycles": 80,  "class": 75},
+    "ONDO":   {"age": 30,  "cap": 40,  "cycles": 0,   "class": 65},
+    "RENDER": {"age": 60,  "cap": 40,  "cycles": 80,  "class": 75},
+    "SUI":    {"age": 60,  "cap": 60,  "cycles": 0,   "class": 55},
+    "STX":    {"age": 80,  "cap": 40,  "cycles": 80,  "class": 70},
+    "UNI":    {"age": 80,  "cap": 60,  "cycles": 80,  "class": 75},
+    "ALGO":   {"age": 80,  "cap": 40,  "cycles": 80,  "class": 70},
+    "ARKM":   {"age": 30,  "cap": 40,  "cycles": 0,   "class": 55},
+    "CELO":   {"age": 60,  "cap": 40,  "cycles": 80,  "class": 60},
+    "CRV":    {"age": 60,  "cap": 40,  "cycles": 80,  "class": 58},
+    "ZK":     {"age": 30,  "cap": 40,  "cycles": 0,   "class": 55},
+    "IMX":    {"age": 60,  "cap": 40,  "cycles": 0,   "class": 65},
+    "GRT":    {"age": 60,  "cap": 40,  "cycles": 80,  "class": 65},
+    "TWT":    {"age": 60,  "cap": 40,  "cycles": 80,  "class": 65},
+    "POL":    {"age": 80,  "cap": 40,  "cycles": 80,  "class": 70},
+    "TRUMP":  {"age": 10,  "cap": 10,  "cycles": 0,   "class": 15},
+    "GOAT":   {"age": 10,  "cap": 10,  "cycles": 0,   "class": 10},
+    "FLOCK":  {"age": 10,  "cap": 10,  "cycles": 0,   "class": 10},
+    "ASTER":  {"age": 30,  "cap": 10,  "cycles": 0,   "class": 15},
+    "ARC":    {"age": 30,  "cap": 10,  "cycles": 0,   "class": 15},
+    "APE":    {"age": 30,  "cap": 40,  "cycles": 0,   "class": 30},
+    "ONE":    {"age": 60,  "cap": 10,  "cycles": 80,  "class": 30},
+    "GDX":    {"age": 100, "cap": 80,  "cycles": 100, "class": 95},
+    "URA":    {"age": 100, "cap": 40,  "cycles": 100, "class": 95},
+    "TSLA":   {"age": 100, "cap": 100, "cycles": 100, "class": 90},
+    "PLTR":   {"age": 80,  "cap": 100, "cycles": 100, "class": 85},
+    "NVDA":   {"age": 100, "cap": 100, "cycles": 100, "class": 95},
+    "COIN":   {"age": 60,  "cap": 80,  "cycles": 100, "class": 80},
+    "HIMS":   {"age": 30,  "cap": 40,  "cycles": 0,   "class": 60},
+    "BABA":   {"age": 100, "cap": 100, "cycles": 100, "class": 85},
+    "ZM":     {"age": 60,  "cap": 60,  "cycles": 100, "class": 75},
+    "LIT":    {"age": 100, "cap": 40,  "cycles": 100, "class": 90},
+    "SIL":    {"age": 100, "cap": 40,  "cycles": 100, "class": 90},
+    "EWW":    {"age": 100, "cap": 40,  "cycles": 100, "class": 90}
+}
 
 # ============================================================
 # РАБОТА С СЕТЬЮ И КЭШИРОВАНИЕМ
 # ============================================================
 
 def _fetch_raw_yfinance(symbol, ticker_suffix, days):
-    """Изолированная сетевая функция с внутренней обработкой исключений"""
-    time.sleep(0.35)
+    time.sleep(0.15)
     try:
         s = yf.Ticker(f"{symbol}{ticker_suffix}")
         return s.history(period=f"{days}d")
@@ -168,6 +205,40 @@ def calculate_single_rs(df_t, btc_t, lookup_days):
         return perf_a - perf_b
         
     return 0.0
+
+# ============================================================
+# РАСЧЕТ SURVIVAL SCORE
+# ============================================================
+
+def calculate_survival_score(symbol, df):
+    base_surv = SURVIVAL_REGISTRY.get(symbol, {"age": 30, "cap": 10, "cycles": 0, "class": 30})
+    
+    if df is not None and len(df) >= 30:
+        df_tail = df.tail(30).copy()
+        df_tail["daily_dollar_vol"] = df_tail["close"] * df_tail["volume"]
+        avg_vol = df_tail["daily_dollar_vol"].mean()
+    else:
+        avg_vol = 5_000_000
+        
+    if avg_vol > 1_000_000_000:
+        liq_score = 100
+    elif avg_vol > 300_000_000:
+        liq_score = 80
+    elif avg_vol > 100_000_000:
+        liq_score = 60
+    elif avg_vol > 30_000_000:
+        liq_score = 40
+    else:
+        liq_score = 10
+        
+    survival_score = (
+        base_surv["age"] * 0.20 +
+        base_surv["cap"] * 0.25 +
+        liq_score * 0.20 +
+        base_surv["cycles"] * 0.20 +
+        base_surv["class"] * 0.15
+    )
+    return max(5.0, min(survival_score, 100.0))
 
 # ============================================================
 # РАСЧЕТ ИНДЕКСОВ И МАТРИЦЫ
@@ -237,11 +308,11 @@ def build_macro_bottom_index(volume_perf_data):
 def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=None):
     zone = BOTTOM_ZONES.get(symbol)
     if not zone or df is None or len(df) < 200: 
-        return (None,) * 13
+        return (None,) * 14
         
     working_df = df.iloc[:end_idx].copy() if end_idx is not None else df.copy()
     if len(working_df) < 50:
-        return (None,) * 13
+        return (None,) * 14
         
     current_price = working_df["close"].iloc[-1]
     
@@ -269,15 +340,33 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     deviation_high_pct = ((current_price - high_zone) / high_zone) * 100
     deviation_low_pct = ((current_price - low_zone) / low_zone) * 100
     
+    # --------------------------------------------------------
+    # ОШИБКА №1 ИСПРАВЛЕНА: ТОЧНАЯ СЕГМЕНТАЦИЯ СКАМОВ И ПАДЕНИЙ
+    # --------------------------------------------------------
     is_free_fall = False
+    if current_price < low_zone and low_zone > 0:
+        if deviation_low_pct < -30.0:
+            is_free_fall = True
+
+    if is_free_fall:
+        decision = "⚠️ Свободное падение"
+    elif current_price < low_zone:
+        decision = "🛡️ Набор осторожно"  # Защитная буферная зона
+    elif low_zone <= current_price <= high_zone:
+        decision = "⭐ Покупка"          # Чистая зона дна
+    elif 0.0 < deviation_high_pct <= 5.0:
+        decision = "➕ Добор"
+    elif 5.0 < deviation_high_pct <= 15.0:
+        decision = "👁 Наблюдение"
+    else:
+        decision = "🔴 Перегрев"
+
+    # Коррекция скоринга дна
     if current_price <= high_zone:
         if current_price < low_zone and low_zone > 0:
             oversold_ratio = (low_zone - current_price) / low_zone
             bottom_score = max(0.0, 100.0 - (oversold_ratio * 150.0))
             status_zone = f"Ниже дна на {abs(deviation_low_pct):.1f}%"
-            
-            if deviation_low_pct < -30.0:
-                is_free_fall = True
         else:
             bottom_score = 100.0
             status_zone = "Внутри зоны"
@@ -290,28 +379,25 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     drawdown_pct = ((current_price - max_p) / max_p * 100) if max_p > 0 else 0
     money_flow_score = min(100.0, abs(drawdown_pct) * 1.15)
     
-    asset_score = (0.40 * fundamental_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
-    
+    # Технический балл актива
+    asset_technical_score = (0.40 * fundamental_rating) + (0.35 * bottom_score) + (0.25 * money_flow_score)
     if is_free_fall:
-        asset_score *= 0.5
+        asset_technical_score *= 0.5
         
-    investment_rating = (0.70 * asset_score) + (0.30 * macro_bottom_score)
-    investment_rating = max(0.0, min(investment_rating, 100.0))
+    survival_score = calculate_survival_score(symbol, working_df)
     
-    if is_free_fall:
-        decision = "⚠️ Свободное падение"
-    elif current_price <= high_zone:
-        decision = "⭐ Покупка"
-    elif 0.0 < deviation_high_pct <= 5.0:
-        decision = "➕ Добор"
-    elif 5.0 < deviation_high_pct <= 15.0:
-        decision = "👁 Наблюдение"
-    else:
-        decision = "🔴 Перегрев"
+    # Синтез технического потенциала и живучести проекта (65% ТТХ / 35% Риск-выживание)
+    asset_score_weighted = (asset_technical_score * 0.65) + (survival_score * 0.35)
+    
+    # --------------------------------------------------------
+    # ОШИБКА №2 ИСПРАВЛЕНА: МАКРОИНДЕКС ПОЛУЧИЛ ДОМИНИРУЮЩИЙ ВЕС (45%)
+    # --------------------------------------------------------
+    investment_rating = (0.55 * asset_score_weighted) + (0.45 * macro_bottom_score)
+    investment_rating = max(0.0, min(investment_rating, 100.0))
         
     return (current_price, low_zone, high_zone, bottom_score, status_zone, 
             fundamental_rating, investment_rating, decision, drawdown_pct, 
-            deviation_high_pct, 0.0, 0.0, "🟡 Расчет")
+            deviation_high_pct, 0.0, 0.0, "🟡 Расчет", survival_score)
 
 def calculate_historical_rating(symbol, df, btc_df, macro_score):
     if df is None or len(df) < 40:
@@ -350,7 +436,8 @@ def build_global_market_state(market_dfs, macro_score):
             "Нижняя_Зона": res[1], "Верхняя_Зона": res[2], "Близость_к_зоне": res[3],
             "Статус_Зоны": res[4], "Фундаментал": res[5], "Инвестиционный_Рейтинг": res[6], 
             "Решение": res[7], "Просадка": res[8], "Дельта_от_зоны": res[9],
-            "Рейтинг_30д_назад": rating_30d_ago, "Дельта_Рейтинга": historical_delta, "Тренд_Силы": trend_force
+            "Рейтинг_30д_назад": rating_30d_ago, "Дельта_Рейтинга": historical_delta, "Тренд_Силы": trend_force,
+            "Survival_Score": res[13]
         })
     return pd.DataFrame(rows)
 
@@ -427,7 +514,7 @@ df_market = st.session_state["df_market"]
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
 st.markdown(f"## **{int(current_macro_score)} / 100**")
-st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")  # Исправлено с 'Phase' на 'Фаза'
+st.markdown(f"**Оценка фазы:** {macro_package['Фаза']}")
 
 with st.expander("🔍 Показать честные математические метрики и дельты"):
     col_left, col_right = st.columns(2)
@@ -446,6 +533,7 @@ st.markdown("---")
 st.markdown("### 💼 ТОП-5 АКТИВОВ ДЛЯ ПОКУПКИ СЕГОДНЯ")
 
 if not df_market.empty:
+    # Исключаем щиткоины в осторожном наборе/свободном падении, берем только чистые триггеры
     portfolio_pool = df_market[df_market["Решение"].isin(["⭐ Покупка", "➕ Добор"])].copy()
     
     if not portfolio_pool.empty:
@@ -455,11 +543,12 @@ if not df_market.empty:
         
         top_5["Цена"] = top_5["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
         top_5["Инв. рейтинг"] = top_5["Инвестиционный_Рейтинг"].map(lambda x: f"{x:.1f}")
+        top_5["Выживаемость"] = top_5["Survival_Score"].map(lambda x: f"{x:.0f}/100")
         
-        p_cols = ["Символ", "Сектор", "Цена", "Инв. рейтинг", "Решение", "Рекомендуемый вес"]
+        p_cols = ["Символ", "Сектор", "Цена", "Выживаемость", "Инв. рейтинг", "Решение", "Рекомендуемый вес"]
         st.dataframe(top_5[p_cols], use_container_width=True, hide_index=True)
     else:
-        st.info("Рынок локально перегрет либо находится в фазе жесткой капитуляции. Безопасные точки входа отсутствуют.")
+        st.info("Рынок локально перегрет либо активы находятся в фазе жесткой капитуляции/неопределенности. Безопасные точки входа отсутствуют.")
 
 # ============================================================
 # БОКОВАЯ ПАНЕЛЬ СЛЕЖЕНИЯ И СБРОС КЭША
@@ -475,9 +564,8 @@ with st.sidebar:
         st.rerun()
         
     st.markdown("---")
-    user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
+    user_risk = st.sidebar.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    # Исправлено: заменено "Risk" на "Риск"
     allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
@@ -512,23 +600,26 @@ if not df_select.empty:
             <div class="metric-value">{row_a['Решение']}</div>
         </div>
         <div class="metric-card">
+            <div class="metric-label">🛡️ Выживаемость (Risk)</div>
+            <div class="metric-value" style="color: #60a5fa;">{row_a['Survival_Score']:.0f} / 100</div>
+        </div>
+        <div class="metric-card">
             <div class="metric-label">🏛️ Фундаментал</div>
             <div class="metric-value">{row_a['Фундаментал']:.1f} / 100</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">🎯 Инвест. рейтинг</div>
-            <div class="metric-value">{row_a['Инвестиционный_Рейтинг']:.1f} / 100</div>
+            <div class="metric-value" style="color: #34d399;">{row_a['Инвестиционный_Рейтинг']:.1f} / 100</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     c_hist, c_trend = st.columns(2)
     with c_hist:
-        st.markdown(f"⏳ **Реальная история изменения рейтинга (30 дней):** `Было: {row_a['Рейтинг_30д_назад']:.1f}` ➡️ `Сейчас: {row_a['Инвестиционный_Рейтинг']:.1f}` (Δ: **{row_a['Дельта_Рейтинга']:+.1f}**)")
+        st.markdown(f"⏳ **История изменения рейтинга (30 дней):** `Было: {row_a['Рейтинг_30д_назад']:.1f}` ➡️ `Сейчас: {row_a['Инвестиционный_Рейтинг']:.1f}` (Δ: **{row_a['Дельта_Рейтинга']:+.1f}**)")
     with c_trend:
         st.markdown(f"⚡ **Сила тренда инвестиционного рейтинга:** `{row_a['Тренд_Силы']}`")
 
-    # Исправлено: s.expander изменен на st.expander
     with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
         c1, c2, c3 = st.columns(3)
@@ -543,7 +634,7 @@ if not df_select.empty:
             st.code(row_a['Статус_Зоны'])
 
 # ============================================================
-# ОБЩАЯ ТАБЛИЦА РАНЖИРОВАНИЯ (Без столбца "Положение от зоны")
+# ОБЩАЯ ТАБЛИЦА РАНЖИРОВАНИЯ
 # ============================================================
 
 st.markdown("---")
@@ -555,25 +646,20 @@ if not df_market.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
         
-        # Исправлено: Сначала форматируем значения, чтобы избежать конфликтов имен
         df_v["Отображаемый_Инвест_Рейтинг"] = df_v["Инвестиционный_Рейтинг"].map(lambda x: f"{float(x):.1f}")
         df_v["Отображаемый_Фундаментал"] = df_v["Фундаментал"].map(lambda x: f"{x:.1f}")
-        df_v["Близость_к_зоне"] = df_v["Близость_к_зоне"].map(lambda x: f"{int(x)}")
+        df_v["Выживаемость"] = df_v["Survival_Score"].map(lambda x: f"{x:.0f}")
         df_v["Дельта_Рейтинга"] = df_v["Дельта_Рейтинга"].map(lambda x: f"{x:+.1f}")
         
-        # Переименование колонок без создания дубликатов с существующим столбцом "Фундаментал"
         df_v = df_v.rename(columns={
             "Отображаемый_Инвест_Рейтинг": "Инвест. рейтинг",
             "Отображаемый_Фундаментал": "Фундаментал_Итого",
-            "Близость_к_зоне": "Близость к зоне",
             "Дельта_Рейтинга": "Δ Рейтинга (30д)",
             "Тренд_Силы": "Тренд силы"
         })
         
-        # Столбец "Положение от зоны" и старый "Фундаментал" исключены из отображения
-        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал_Итого", "Близость к зоне", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
+        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал_Итого", "Выживаемость", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
         
-        # Финальный маппинг имени для красивой шапки таблицы
         df_display = df_v[show_cols].rename(columns={"Фундаментал_Итого": "Фундаментал"})
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 else:
@@ -584,4 +670,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Избыточные столбцы скрыты из интерфейса.")
+st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Устранена переоценка скамов. Вес макро-контекста увеличен до 45%.")
