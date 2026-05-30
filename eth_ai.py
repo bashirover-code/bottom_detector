@@ -150,7 +150,7 @@ def build_macro_bottom_index():
     try:
         f_g_val = int(requests.get("https://api.alternative.me/fng/", timeout=5).json()['data'][0]['value'])
     except:
-        f_g_val = 23  # Дефолтное значение паники
+        f_g_val = 23
 
     btc_data = load_asset_data("BTC", days=400)
     if btc_data is not None and len(btc_data) > 350:
@@ -266,7 +266,7 @@ def calculate_macro_matrix(symbol, df, btc_df=None):
     
     # Жесткий фильтр перегрева
     if current_price > (high_zone * 1.15):
-        decision = "👁 Наблюнение"
+        decision = "👁 Наблюдение"
     else:
         if quality_rating < 45:
             decision = "❌ Игнор"
@@ -311,7 +311,7 @@ with st.spinner("Синхронизация циклов макро-данных
 
 st.markdown("### 🏦 МАКРО-ИНДЕКС РЫНКА")
 st.markdown(f"## **{macro_bottom_score} / 100**")
-st.markdown(f"**Статус фазы:** {macro_package['Phase']}")
+st.markdown(f"**Статус фазы:** {macro_package['Фаза']}")
 
 with st.expander("🔍 Показать детальные макро-метрики расшифровки весов"):
     col_left, col_right = st.columns(2)
@@ -330,7 +330,7 @@ with st.sidebar:
     st.header("⚙️ УПРАВЛЕНИЕ МАТРИЦЕЙ")
     user_risk = st.radio("🛡️ Выберите категорию риска актива:", ["Низкий", "Средний", "Высокий"])
     
-    allowed_assets = df_market[df_market["Risk"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: allowed_assets = list(BOTTOM_ZONES.keys())
     
     asset = st.selectbox("Выбор актива для детального разбора:", allowed_assets)
@@ -375,7 +375,6 @@ if not df_select.empty:
     # СКРЫТЫЙ БЛОК МЕТОДИКИ
     with st.expander("📝 Методика расчета и ордерные сетки диапазона"):
         raw_zone = BOTTOM_ZONES.get(asset, (0.0, 0.0))
-        dev_pct = ((row_a['Цена'] - raw_zone[1]) / raw_zone[1]) * 100 if raw_zone[1] > 0 else 0
         
         c1, c2, c3 = st.columns(3)
         with c1:
