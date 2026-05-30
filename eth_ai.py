@@ -10,7 +10,7 @@ import yfinance as yf
 # НАСТРОЙКИ СТРАНИЦЫ И СИНХРОНИЗАЦИЯ
 # ============================================================
 
-st.set_page_config(page_title="Институциональная Двухфакторная Матрица", layout="wide")
+st.set_page_config(page_title="Инвестиционная матрица", layout="wide")
 
 st.markdown("""
     <meta http-equiv="refresh" content="900">
@@ -22,7 +22,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏛️ Двухфакторная Инвестиционная Матрица v3.1")
+# Изменено по ТЗ
+st.title("🏛️ Инвестиционная матрица")
 
 # ============================================================
 # 1. СПИСКИ АКТИВОВ
@@ -38,8 +39,6 @@ STOCK_LIST = [
     "HIMS", "SIL", "GDX", "TSLA", "LIT", "ZM", "URA", "PLTR",
     "EWW", "BABA", "COIN", "NVDA", "SBER.ME", "MTSS.ME", "HEAD.ME"
 ]
-
-VETERAN_LIST = ["BTC", "ETH", "LINK", "UNI", "AAPL", "MSFT", "NVDA", "TSLA"]
 
 # ============================================================
 # 2. ЗАГРУЗКА ДАННЫХ
@@ -130,16 +129,16 @@ def calculate_single_rs(df, btc_df, lookup_days):
     return 0.0
 
 # ============================================================
-# 4. ДВУХФАКТОРНАЯ МОДЕЛЬ С УМНЫМ OPPORTUNITY SCORE
+# 4. ДВУХФАКТОРНАЯ МОДЕЛЬ С АВТОМАТИЧЕСКИМ ФИЛЬТРОМ МУСОРА
 # ============================================================
 
 def calculate_two_factor_matrix(symbol, df, btc_df=None):
     if df is None or len(df) < 200:
-        return (None,) * 20
+        return (None,) * 21
         
     df = df.copy()
     
-    # 0. Инженерный расчет метрик тренда
+    # Расчет базовых метрик
     df["ma90"] = df["close"].rolling(window=90, min_periods=30).mean()
     df["std90"] = df["close"].rolling(window=90, min_periods=30).std()
     df["z_score"] = (df["close"] - df["ma90"]) / (df["std90"] + 1e-10)
@@ -147,7 +146,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     df["ma200"] = df["close"].rolling(window=200, min_periods=50).mean()
     df["dollar_volume"] = df["close"] * df["volume"]
     
-    # Исправлено: безопасное заполнение пустых значений без SettingWithCopyWarning
     target_cols = ["ma90", "std90", "z_score", "rsi", "ma200", "dollar_volume"]
     df[target_cols] = df[target_cols].bfill().ffill().fillna(0)
     
@@ -165,7 +163,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     
     reasons_checklist = []
 
-    # ФАКТОР 1: QUALITY VOLUME
+    # ФАКТОР 1: ОБЪЕМ ЛИКВИДНОСТИ
     if avg_dollar_volume > 50_000_000:
         quality_vol_score, liq_risk = 100, "Низкий"
     elif avg_dollar_volume > 5_000_000:
@@ -173,7 +171,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     else:
         quality_vol_score, liq_risk = 25, "Высокий"
 
-    # ФАКТОР 2: ЧИСТАЯ СИЛА К ВТС (Мультитаймфрейм)
+    # ФАКТОР 2: СИЛА К BTC / РЫНКУ
     rs30 = calculate_single_rs(df, btc_df, 30)
     rs90 = calculate_single_rs(df, btc_df, 90)
     rs180 = calculate_single_rs(df, btc_df, 180)
@@ -185,22 +183,21 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     elif relative_strength > -20: rs_score = 40
     else: rs_score = 10
     
-    # Расчет Recovery Score от годового дна
+    # Внутренний расчет Recovery Score
     cycle_low = df["close"].tail(365).min()
     recovery_score = (((current_price - cycle_low) / (current_ath - cycle_low)) * 100) if (current_ath - cycle_low) > 0 else 0.0
 
-    # Динамическая Сила (Strength Score) во избежание ложного насыщения
     strength_score = (quality_vol_score * 0.3) + (rs_score * 0.5) + (recovery_score * 0.2)
     strength_score = max(0, min(strength_score, 100))
 
-    # ФАКТОР 3: STRUCTURE
+    # ФАКТОР 3: СТРУКТУРА ТРЕНДА
     structure_raw = 0
     if current_price > c_ma90: structure_raw += 10
     if current_price > c_ma200: structure_raw += 15
     if c_ma200 > ma200_30_days_ago: structure_raw += 10
     structure_score = int((structure_raw / 35) * 100) if structure_raw > 0 else 0
 
-    # ФАКТОР 4: BOTTOM SCORE (Чистая глубина локального страха)
+    # ФАКТОР 4: ИНДИКАТОРЫ ДНА (Локальный страх)
     bottom_score = 0
     if drawdown_pct <= -70: bottom_score += 40
     elif drawdown_pct <= -45: bottom_score += 20
@@ -209,65 +206,74 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     if c_z <= low_t: bottom_score += 20
     bottom_score = min(bottom_score, 100)
 
-    # ============================================================
-    # МАТЕМАТИЧЕСКАЯ РЕАЛИЗАЦИЯ УМНОГО OPPORTUNITY SCORE ПО ТЗ:
-    # ============================================================
-    
-    # 1. Drawdown Score (40%): Линейная шкала от просадки. -90% просадки -> 100 баллов
+    # Компоненты Opportunity Score
     drawdown_score = min(100, abs(drawdown_pct) * 1.11)
-    
-    # 2. RS Recovery Score (30%): Возможность взять силу по хорошей цене. 
     rs_recovery_score = max(0, min(100, rs_score * (1 - (recovery_score / 100))))
     
-    # 3. Accumulation Score (30%): Сколько дней за последние 60 дней актив спал в накоплении (Z-Score < 0.2)
     recent_z = df["z_score"].tail(60).values
     accumulation_days = np.sum(recent_z < 0.2)
     accumulation_score = (accumulation_days / 60) * 100
     
-    # ИТОГОВАЯ СБОРКА УМНОГО OPPORTUNITY SCORE
     opportunity_score = (0.4 * drawdown_score) + (0.3 * rs_recovery_score) + (0.3 * accumulation_score)
     opportunity_score = max(0, min(opportunity_score, 100))
 
-    # ============================================================
-    # РАСЧЕТ ИТОГОВЫХ ДВУХФАКТОРНЫХ РЕЙТИНГОВ
-    # ============================================================
-    
-    # А. Итоговое качество (Альфа-сила актива)
+    # Первичный базовый расчет рейтингов
     quality_rating = (0.45 * quality_vol_score) + (0.35 * strength_score) + (0.20 * structure_score)
-    
-    # Б. Потенциал входа (Своевременность / Смарт-тайминг)
     entry_rating = (0.60 * opportunity_score) + (0.40 * bottom_score)
     
-    # Защитный коэффициент даунтренда для Потенциала входа
+    # Защитный коэффициент даунтренда
     if structure_raw == 0:
         entry_rating *= 0.85
         reasons_checklist.append(("⚠️ Потенциал ограничен: Покупка ведется против сильного нисходящего макро-тренда", False))
 
-    # Жесткий фильтр мусорности
     if avg_dollar_volume < 1_000_000:
         quality_rating *= 0.7
         entry_rating *= 0.7
-        reasons_checklist.append(("🚨 ФИЛЬТР МУСОРНОСТИ: Долларовый оборот < $1М. Штраф ×0.7 ко всем метрикам", False))
+        reasons_checklist.append(("🚨 Фильтр ликвидности: Долларовый оборот < $1М. Штраф ×0.7", False))
+
+    # ============================================================
+    # ВНЕДРЕНИЕ СИСТЕМЫ ФИЛЬТРАЦИИ МУСОРА ПО ТЗ (ПРАВИЛО ДЛЯ TRUMP/ONE)
+    # ============================================================
+    if quality_rating < 20:
+        entry_rating *= 0.5
+        reasons_checklist.append(("❌ Жесткий фильтр: Крайне низкое Качество (<20). Потенциал урезан в 2 раза.", False))
+    elif quality_rating < 25:
+        entry_rating *= 0.7
+        reasons_checklist.append(("⚠️ Фильтр мусора: Низкое Качество (<25). Потенциал урезан на 30%.", False))
 
     quality_rating = max(0, min(quality_rating, 100))
     entry_rating = max(0, min(entry_rating, 100))
 
-    # 6-ступенчатый классификатор стадий цикла
+    # ============================================================
+    # АВТОМАТИЧЕСКАЯ ЗОНАЛЬНАЯ МАТРИЦА РЕШЕНИЙ ПО ТЗ
+    # ============================================================
+    if quality_rating < 40:
+        decision = "❌ Игнор"
+    elif quality_rating > 70 and entry_rating > 60:
+        decision = "⭐ Покупка"
+    elif quality_rating > 70 and 40 <= entry_rating <= 60:
+        decision = "👁 Наблюдение"
+    elif 40 <= quality_rating <= 70 and entry_rating > 60:
+        decision = "⚠ Спекуляция"
+    else:
+        decision = "⚪ Удержание"
+
+    # Классификатор стадий цикла
     if c_rsi < 35 and c_z < -1.5:
         cycle_stage = "Капитуляция"
     elif current_price > c_ma90 and current_price > c_ma200:
         if c_rsi > 72 or c_z > up_t: cycle_stage = "Перегрев"
         elif c_ma200 > ma200_30_days_ago and c_rsi > 58: cycle_stage = "Тренд"
-        else: cycle_stage = "Ранний тренд"
+        else: cycle_stage = "Ранний trend"
     elif current_price > c_ma90 and (recovery_score > 15 or c_z > 0.5):
         cycle_stage = "Разворот"
     else:
         cycle_stage = "Накопление"
 
-    return df, current_price, c_z, quality_rating, entry_rating, (low_t, up_t), c_rsi, drawdown_pct, relative_strength, current_ath, avg_dollar_volume, strength_score, recovery_score, opportunity_score, drawdown_score, rs_recovery_score, accumulation_score, cycle_stage, liq_risk, reasons_checklist
+    return df, current_price, c_z, quality_rating, entry_rating, (low_t, up_t), c_rsi, drawdown_pct, relative_strength, current_ath, avg_dollar_volume, strength_score, recovery_score, opportunity_score, drawdown_score, rs_recovery_score, accumulation_score, cycle_stage, liq_risk, reasons_checklist, decision
 
 # ============================================================
-# ИНТЕРФЕЙС И ОПЕРАЦИОННАЯ СРЕДА
+# ИНТЕРФЕЙС ПАНЕЛИ УПРАВЛЕНИЯ
 # ============================================================
 
 with st.sidebar:
@@ -276,9 +282,9 @@ with st.sidebar:
     market = st.radio("Сектор рынка", ["Криптовалюты", "Фондовый рынок"])
     asset = st.selectbox("Выбор актива", CRYPTO_LIST if market == "Криптовалюты" else STOCK_LIST)
     st.markdown("---")
-    st.caption("🏛️ **Умный Квантовый Скоринг**")
-    st.caption("• Интегрирован многофакторный Opportunity Score:\n  [0.4*Drawdown + 0.3*RS_Rec + 0.3*Accum]")
-    st.caption("• Полная изоляция Альфы и инвестиционного Тайминга.")
+    st.caption("🏛️ **Инвестиционный анализ**")
+    st.caption("• Внедрен зональный автоматический фильтр мусорных активов.")
+    st.caption("• Слабые по Качеству токены пессимизируются в таблице.")
 
 with st.spinner("Расчет макро-показателей рынка..."):
     market_regime = get_market_regime()
@@ -292,10 +298,11 @@ if raw is None or len(raw) < 200:
     st.error(f"❌ Недостаточно данных для анализа {asset}.")
     st.stop()
 
-df, c_price, c_z, q_rating, e_rating, (low_thr, upper_thr), c_rsi, drawdown_pct, rel_strength, current_ath, dollar_vol, strength_s, recovery_score, opportunity_score, dd_s, rs_rec_s, accum_s, cycle_stage, liq_risk, reasons = calculate_two_factor_matrix(asset, raw, btc_global_df if is_c else None)
+# Распаковка ядра расчетов
+df, c_price, c_z, q_rating, e_rating, (low_thr, upper_thr), c_rsi, drawdown_pct, rel_strength, current_ath, dollar_vol, strength_s, recovery_score, opportunity_score, dd_s, rs_rec_s, accum_s, cycle_stage, liq_risk, reasons, main_decision = calculate_two_factor_matrix(asset, raw, btc_global_df if is_c else None)
 
 # ============================================================
-# ВЫВОД ИНФОРМАЦИОННЫХ ПАНЕЛЕЙ И КАРТОЧЕК
+# ВЫВОД КАРТОЧЕК И СПЕЦИФИКАЦИЙ
 # ============================================================
 
 st.header(f"📊 Спецификация актива: {asset}")
@@ -308,17 +315,19 @@ with c2:
 with c3: 
     e_color = "#22c55e" if e_rating >= 70 else "#eab308" if e_rating >= 45 else "#ef4444"
     st.markdown(f"<div style='background: {e_color}10; padding: 10px; border-radius: 8px; border: 1px solid {e_color}30; text-align: center;'><p style='color: gray; margin:0; font-size:10px; font-weight:bold;'>ПОТЕНЦИАЛ ВХОДА</p><p style='color: {e_color}; font-size:20px; font-weight:bold; margin:3px 0 0 0;'>{e_rating:.1f}</p></div>", unsafe_allow_html=True)
-with c4: st.metric("🎯 SMART OPPORTUNITY", f"{opportunity_score:.1f}")
-with c5: st.metric("🔄 RECOVERY SCORE", f"{recovery_score:.1f}%")
+with c4: 
+    # Заменено на автоматический вывод решения в карточку по ТЗ
+    st.metric("🎯 СИСТЕМНОЕ РЕШЕНИЕ", main_decision)
+with c5: st.metric("📈 SMART OPPORTUNITY", f"{opportunity_score:.1f}")
 
 st.markdown(f"""
 <div style='background: linear-gradient(135deg, #0b0f19 0%, #111827 100%); padding:12px; border-radius:10px; margin: 15px 0; border: 1px solid #1f2937;'>
     <p style='margin:0; color:#f3f4f6; font-size:13px; text-align: center;'>
-        <b>Декомпозиция Opportunity Score:</b> &nbsp;&nbsp;
+        <b>Декомпозиция индикатора Opportunity:</b> &nbsp;&nbsp;
         Просадка (40%): <span style='color:#38bdf8; font-weight:bold;'>{dd_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         RS Отскок (30%): <span style='color:#fb923c; font-weight:bold;'>{rs_rec_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
         Дни Накопления (30%): <span style='color:#a855f7; font-weight:bold;'>{accum_s:.1f}</span> &nbsp;&nbsp;|&nbsp;&nbsp;
-        <b>Стадия:</b> <span style='font-weight:bold; color:#eab308;'>{cycle_stage}</span>
+        <b>Стадия макроцикла:</b> <span style='font-weight:bold; color:#eab308;'>{cycle_stage}</span>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -327,7 +336,7 @@ if reasons:
     for item in reasons: st.markdown(f"- {item[0]}")
 
 # ============================================================
-# 5. ГРАФИК ТРЕНДА
+# 5. ГРАФИК ЦЕНЫ АКТИВА
 # ============================================================
 st.markdown("---")
 df_chart = df.tail(500).copy()
@@ -337,10 +346,10 @@ fig.update_layout(height=350, template="plotly_dark", xaxis_title="", yaxis_titl
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (ИСПРАВЛЕННАЯ)
+# 6. СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА (ОБНОВЛЕННАЯ С РЕШЕНИЯМИ)
 # ============================================================
 st.markdown("---")
-st.subheader("📋 СКВОЗНАЯ ИНВЕСТИЦИОННАЯ МАТРИЦА С УМНЫМ OPPORTUNITY SCORE")
+st.subheader("📋 СКВОЗНАЯ ТАБЛИЦА РАНЖИРОВАНИЯ АКТИВОВ")
 
 @st.cache_data(ttl=900)
 def build_summary_table(regime):
@@ -355,33 +364,39 @@ def build_summary_table(regime):
         res = calculate_two_factor_matrix(symbol, df_t, btc_df if atype == "Криптовалюта" else None)
         if res[0] is None: continue
             
-        (_, _, _, quality_r, entry_r, _, _, ddown, rel_str, _, dollar_vol, _, recovery_s, opportunity_s, _, _, _, cycle_stage, _, _) = res
+        # Удалена переменная recovery_s из распаковки за ненадобностью в таблице
+        (_, _, _, quality_r, entry_r, _, _, ddown, rel_str, _, dollar_vol, _, _, opportunity_s, _, _, _, cycle_stage, _, _, dec_r) = res
         
-        # Исправлено: Сквозная таблица полностью независима от глобальных переменных
         rows.append({
             "Символ": symbol,
             "Итоговое качество": round(quality_r, 1),
             "Потенциал входа": round(entry_r, 1),
+            "Решение": dec_r, # Добавлено по ТЗ
             "Стадия цикла": cycle_stage,
             "Просадка": f"{ddown:.1f}%",
             "RS BTC": f"{rel_str:+.1f}%" if atype == "Криптовалюта" else "N/A",
             "Ликвидность": f"${dollar_vol / 1e6:.1f}M",
-            "Recovery": f"{recovery_s:.1f}%",
             "Opportunity": round(opportunity_s, 1)
         })
     return rows
 
-with st.spinner("Генерация многофакторной матрицы скоринга..."):
+with st.spinner("Генерация матрицы сквозного скоринга..."):
     summary = build_summary_table(market_regime)
 
 if summary:
+    # Таблица автоматически ранжируется по Потенциалу входа, но весь шлак опустится вниз из-за штрафа к качеству
     df_summary = pd.DataFrame(summary).sort_values(by="Потенциал входа", ascending=False)
+    
+    # Меняем порядок колонок, чтобы "Решение" было на видном месте рядом с Потенциалом
+    cols_order = ["Символ", "Итоговое качество", "Потенциал входа", "Решение", "Стадия цикла", "Просадка", "RS BTC", "Ликвидность", "Opportunity"]
+    df_summary = df_summary[cols_order]
+    
     st.dataframe(df_summary, use_container_width=True, hide_index=True)
-    st.caption("💡 Матрица ранжирована по Потенциалу входа. Благодаря многофакторному Opportunity Score, в топ поднимаются фундаментально сильные активы, прошедшие длительную фазу накопления.")
+    st.caption("💡 Таблица отранжирована по Потенциалу входа. Активы с Качеством < 25 автоматически штрафуются и смещаются вниз, получая статус «❌ Игнор».")
 
 # ============================================================
 # 7. ПОДВАЛ
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Обновлено: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Ядро: Многофакторный Opportunity Score [0.4*Drawdown + 0.3*RS_Rec + 0.3*Accum]")
+st.caption(f"📅 Синхронизация данных: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Автоматическая фильтрация мусорных активов включена")
