@@ -120,7 +120,7 @@ assert abs(0.40 + 0.35 + 0.25 - 1.0) < 1e-6, "Веса скоринга отде
 # ============================================================
 
 def _fetch_raw_yfinance(symbol, ticker_suffix, days):
-    """Изолированная сетевая функция с внутренней обработкой исключений (Момент №1)"""
+    """Изолированная сетевая функция с внутренней обработкой исключений"""
     time.sleep(0.35)
     try:
         s = yf.Ticker(f"{symbol}{ticker_suffix}")
@@ -305,7 +305,7 @@ def calculate_macro_matrix(symbol, df, macro_bottom_score, btc_df=None, end_idx=
     elif 0.0 < deviation_high_pct <= 5.0:
         decision = "➕ Добор"
     elif 5.0 < deviation_high_pct <= 15.0:
-        decision = "👁 Наблюдение"
+        decision = "👁 Наблюнение"
     else:
         decision = "🔴 Перегрев"
         
@@ -329,7 +329,7 @@ def calculate_historical_rating(symbol, df, btc_df, macro_score):
     return res_hist[6] if res_hist[6] is not None else 50.0
 
 # ============================================================
-# СТРУКТУРИРОВАНИЕ ДАННЫХ И СТЕКА (Момент №2: Перенесено ВЫШЕ вызовов)
+# СТРУКТУРИРОВАНИЕ ДАННЫХ И СТЕКА 
 # ============================================================
 
 def build_global_market_state(market_dfs, macro_score):
@@ -477,7 +477,7 @@ with st.sidebar:
     st.markdown("---")
     user_risk = st.radio("🛡️ Категория риска активов:", ["Низкий", "Средний", "Высокий"])
     
-    allowed_assets = df_market[df_market["Риск"] == user_risk]["Символ"].tolist() if not df_market.empty else []
+    allowed_assets = df_market[df_market["Risk"] == user_risk]["Символ"].tolist() if not df_market.empty else []
     if not allowed_assets: 
         allowed_assets = list(BOTTOM_ZONES.keys())
     
@@ -541,7 +541,7 @@ if not df_select.empty:
             st.code(row_a['Статус_Зоны'])
 
 # ============================================================
-# ОБЩАЯ ТАБЛИЦА РАНЖИРОВАНИЯ
+# ОБЩАЯ ТАБЛИЦА РАНЖИРОВАНИЯ (Без столбца "Положение от зоны")
 # ============================================================
 
 st.markdown("---")
@@ -553,20 +553,20 @@ if not df_market.empty:
         df_v["Просадка"] = df_v["Просадка"].map(lambda x: f"{x:.1f}%")
         df_v["Цена"] = df_v["Цена"].map(lambda x: f"${x:,.2f}" if x >= 1 else f"${x:,.4f}")
         df_v["Инвестиционный_Рейтинг"] = df_v["Инвестиционный_Рейтинг"].map(lambda x: f"{x:.1f}")
-        df_v["Фундаментал"] = df_v["Фундаментал"].map(lambda x: f"{x:.1f}")
+        df_v["Fund_Rating"] = df_v["Фундаментал"].map(lambda x: f"{x:.1f}")
         df_v["Близость_к_зоне"] = df_v["Близость_к_зоне"].map(lambda x: f"{int(x)}")
         df_v["Дельта_Рейтинга"] = df_v["Дельта_Рейтинга"].map(lambda x: f"{x:+.1f}")
         
         df_v = df_v.rename(columns={
             "Инвестиционный_Рейтинг": "Инвест. рейтинг",
-            "Фундаментал": "Фундаментал",
+            "Fund_Rating": "Фундаментал",
             "Близость_к_зоне": "Близость к зоне",
-            "Статус_Зоны": "Положение от зоны",
             "Дельта_Рейтинга": "Δ Рейтинга (30д)",
             "Тренд_Силы": "Тренд силы"
         })
         
-        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал", "Близость к зоне", "Положение от зоны", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
+        # Столбец "Положение от зоны" исключен из списка вывода
+        show_cols = ["Символ", "Сектор", "Цена", "Фундаментал", "Близость к зоне", "Инвест. рейтинг", "Δ Рейтинга (30д)", "Тренд силы", "Решение"]
         st.dataframe(df_v[show_cols], use_container_width=True, hide_index=True)
 else:
     st.info("Данные о состоянии рынка временно недоступны.")
@@ -576,4 +576,4 @@ else:
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Исключения изолированы на сетевом уровне | Архитектурная топология выровнена.")
+st.caption(f"📅 Срез зафиксирован: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Избыточные столбцы скрыты из интерфейса.")
