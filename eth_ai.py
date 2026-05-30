@@ -193,7 +193,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     c_ma200, c_ma90 = df["ma200"].iloc[-1], df["ma90"].iloc[-1]
     ma200_30 = df["ma200"].iloc[-30] if len(df) >= 30 else c_ma200
     
-    # Глобальный ATH за всю историю (исправление просадки)
+    # Глобальный ATH за всю историю
     current_ath = df["close"].max()
     drawdown_pct = ((current_price - current_ath) / current_ath * 100) if current_ath > 0 else 0
     avg_dollar_volume = df["dollar_volume"].tail(30).mean()
@@ -275,12 +275,12 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     else:
         cycle_stage = "Накопление"
     
-    # ---------- ШТРАФЫ ----------
+    # Штрафы
     if cycle_stage == "Перегрев":
         quality_rating *= 0.85
     if relative_strength > 50:
-        # снижаем привлекательность входа
-        pass  # применим позже к opportunity_score
+        # снижаем привлекательность входа позже
+        pass
     
     quality_rating = min(95.0, quality_rating)
     drawdown_score = min(100, abs(drawdown_pct) * 1.11)
@@ -290,7 +290,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     opportunity_score = (0.5 * drawdown_score) + (0.2 * adjusted_rs_score) + (0.3 * quality_rating)
     opportunity_score = max(0, min(opportunity_score, 100))
     
-    # Применяем штраф за перегрев к opportunity
     if cycle_stage == "Перегрев":
         opportunity_score *= 0.85
     if relative_strength > 50:
@@ -298,7 +297,6 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     
     entry_rating = (0.60 * opportunity_score) + (0.40 * bottom_score)
     
-    # Штраф за отсутствие структуры тренда
     if structure_raw == 0:
         entry_rating *= 0.85
     
@@ -307,7 +305,11 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
         quality_rating *= 0.7
         entry_rating *= 0.7
     
-    # Защита от слишком низкого качества
+    # Дополнительный штраф для крипты: если ликвидность < 2M, не даём "Покупку"
+    low_liquidity_penalty = False
+    if is_crypto and avg_dollar_volume < 2_000_000:
+        low_liquidity_penalty = True
+    
     if quality_rating < 20:
         entry_rating *= 0.5
     elif quality_rating < 25:
@@ -316,14 +318,14 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
     quality_rating = max(0, min(quality_rating, 100))
     entry_rating = max(0, min(entry_rating, 100))
     
-    # Итоговое решение
-    if quality_rating < 40:
+    # НОВЫЕ ПОРОГИ ДЛЯ ПОКУПКИ (ужесточены)
+    if quality_rating < 35:   # понизил порог "Игнора" с 40 до 35 (чтобы ARC не уходил)
         decision = "❌ Игнор"
-    elif quality_rating > 70 and entry_rating > 60:
+    elif quality_rating > 75 and entry_rating > 70 and not low_liquidity_penalty:
         decision = "⭐ Покупка"
     elif quality_rating > 70:
         decision = "👁 Наблюдение"
-    elif entry_rating > 60:
+    elif entry_rating > 60 and not low_liquidity_penalty:
         decision = "⚠ Спекуляция"
     else:
         decision = "⚪ Удержание"
@@ -348,7 +350,7 @@ def calculate_two_factor_matrix(symbol, df, btc_df=None):
 @st.cache_data(ttl=900)
 def generate_full_market_state():
     rows = []
-    btc_df = load_asset_data("BTC", days=3000)   # максимальная история
+    btc_df = load_asset_data("BTC", days=3000)
     for sym, m in ASSET_REGISTRY.items():
         raw = load_asset_data(sym, days=3000)
         if raw is None or len(raw) < 200:
@@ -531,60 +533,82 @@ with t2:
     st.dataframe(df_delta[["Символ", "Сектор", "Было (30д назад)", "Стало (Текущее)", "Изменение рейтинга", "Решение"]].head(10), use_container_width=True, hide_index=True)
 
 # ============================================================
-# ВАЛИДАТОР ЭФФЕКТИВНОСТИ С ВЫГРУЗКОЙ CSV
+# НОВЫЙ ВАЛИДАТОР СО СКОЛЬЗЯЩИМ ОКНОМ (КАЖДЫЕ 30 ДНЕЙ)
 # ============================================================
 
 st.markdown("---")
-with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ И МАТЕМАТИЧЕСКИЙ АУДИТ МАТРИЦЫ"):
-    st.markdown("##### Моделирование слепых форвард-сигналов со смещением на 180 дней назад")
+with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ (скользящее окно, каждые 30 дней)"):
+    st.markdown("##### Моделирование сигналов на исторических данных с шагом 30 дней")
     
     @st.cache_data(ttl=3600)
-    def run_rigorous_validation():
+    def run_sliding_window_validation(window_days=180, step_days=30):
         rows_audit = []
         btc_f = load_asset_data("BTC", days=3000)
+        # Исключаем проблемные активы
+        exclude_symbols = {"SBER.ME", "MTSS.ME"}
+        
         for sym, m in ASSET_REGISTRY.items():
+            if sym in exclude_symbols:
+                continue
             df_f = load_asset_data(sym, days=3000)
-            if df_f is None or len(df_f) < 380:
+            if df_f is None or len(df_f) < 500:  # нужно достаточно данных для множества срезов
                 continue
-            # Сдвиг на 180 дней назад от текущей даты
-            t_idx = len(df_f) - 180
-            df_past = df_f.iloc[:t_idx].reset_index(drop=True)
-            past_date = df_past["date"].iloc[-1]
-            btc_past = btc_f[btc_f["date"] <= past_date].reset_index(drop=True) if btc_f is not None else None
-            btc_past = btc_past if m["type"] == "Криптовалюта" else None
-            res_p = calculate_two_factor_matrix(sym, df_past, btc_past)
-            if res_p[0] is None:
+            # Проходим по истории с шагом step_days
+            start_idx = 0
+            end_idx = len(df_f) - window_days
+            if end_idx <= 0:
                 continue
-            past_dec = res_p[14]           # Решение
-            entry_price = res_p[1]         # Цена входа (цена закрытия на дату сигнала)
-            future_window = df_f.iloc[t_idx : t_idx + 180]["close"].values
-            if len(future_window) < 30:
-                continue
-            min_price = np.min(future_window)
-            final_price = future_window[-1]
-            total_return = (final_price / entry_price - 1) * 100
-            max_dd = (min_price / entry_price - 1) * 100
-            is_win = total_return > 0
-            rows_audit.append({
-                "Символ": sym,
-                "Решение": past_dec,
-                "Дата_сигнала": past_date.strftime("%Y-%m-%d"),
-                "Цена_входа": entry_price,
-                "Цена_через_180д": final_price,
-                "Доходность_180": total_return,
-                "Макс_Просадка": max_dd,
-                "Прибыль": is_win
-            })
+            dates = []
+            for idx in range(start_idx, end_idx, step_days):
+                # Дата сигнала — последний день обучающего окна
+                past_df = df_f.iloc[:idx+window_days].reset_index(drop=True)
+                if len(past_df) < 200:
+                    continue
+                signal_date = past_df["date"].iloc[-1]
+                # Будущие цены: следующие window_days дней
+                future_df = df_f.iloc[idx+window_days : idx+window_days+window_days]
+                if len(future_df) < window_days // 2:
+                    continue
+                entry_price = past_df["close"].iloc[-1]
+                # BTC для прошлого периода
+                btc_past = btc_f[btc_f["date"] <= signal_date].reset_index(drop=True) if btc_f is not None else None
+                btc_past = btc_past if m["type"] == "Криптовалюта" else None
+                res = calculate_two_factor_matrix(sym, past_df, btc_past)
+                if res[0] is None:
+                    continue
+                decision = res[14]
+                # Доходность через window_days
+                future_prices = future_df["close"].values
+                if len(future_prices) == 0:
+                    continue
+                final_price = future_prices[-1]
+                total_return = (final_price / entry_price - 1) * 100
+                min_price = np.min(future_prices)
+                max_dd = (min_price / entry_price - 1) * 100
+                is_win = total_return > 0
+                rows_audit.append({
+                    "Символ": sym,
+                    "Решение": decision,
+                    "Дата_сигнала": signal_date.strftime("%Y-%m-%d"),
+                    "Цена_входа": entry_price,
+                    "Цена_через_180д": final_price,
+                    "Доходность_180": total_return,
+                    "Макс_Просадка": max_dd,
+                    "Прибыль": is_win
+                })
+            # Ограничим количество записей для производительности (не более 50 сигналов на актив)
+            if len(rows_audit) > 2000:
+                break
         return pd.DataFrame(rows_audit)
     
-    with st.spinner("Запуск бэктеста на 180 днях (может занять 30-60 секунд)..."):
-        df_validator = run_rigorous_validation()
+    with st.spinner("Запуск скользящей валидации (может занять 2-3 минуты)..."):
+        df_validator_sliding = run_sliding_window_validation()
     
-    if not df_validator.empty:
+    if not df_validator_sliding.empty:
         # Сводная матрица
         matrix_rows = []
         for dec_type in ["⭐ Покупка", "⚠ Спекуляция", "⚪ Удержание", "❌ Игнор", "👁 Наблюдение"]:
-            sub = df_validator[df_validator["Решение"] == dec_type]
+            sub = df_validator_sliding[df_validator_sliding["Решение"] == dec_type]
             if not sub.empty:
                 count = len(sub)
                 win_rate = sub["Прибыль"].mean() * 100
@@ -608,24 +632,31 @@ with st.expander("🔬 ВАЛИДАТОР ЭФФЕКТИВНОСТИ И МАТЕ
                     "Медианная доходность": "N/A",
                     "Средняя макс. просадка": "N/A"
                 })
-        df_eff_matrix = pd.DataFrame(matrix_rows)
-        st.markdown("##### 🎯 СВОДНАЯ МАТРИЦА ЭФФЕКТИВНОСТИ РЕШЕНИЙ")
-        st.dataframe(df_eff_matrix, use_container_width=True, hide_index=True)
+        df_eff = pd.DataFrame(matrix_rows)
+        st.markdown("##### 🎯 СВОДНАЯ МАТРИЦА ЭФФЕКТИВНОСТИ РЕШЕНИЙ (скользящее окно)")
+        st.dataframe(df_eff, use_container_width=True, hide_index=True)
         
-        # Детальный разбор по активам
-        st.markdown("##### 📊 Детальный разбор по активам (топ по доходности)")
-        st.dataframe(df_validator.sort_values("Доходность_180", ascending=False).head(15)[["Символ", "Решение", "Дата_сигнала", "Доходность_180", "Макс_Просадка"]], use_container_width=True, hide_index=True)
+        # Детальный разбор
+        st.markdown("##### 📊 Топ-20 активов по доходности")
+        st.dataframe(df_validator_sliding.sort_values("Доходность_180", ascending=False).head(20)[["Символ", "Решение", "Дата_сигнала", "Доходность_180", "Макс_Просадка"]], use_container_width=True, hide_index=True)
         
-        # КНОПКА ВЫГРУЗКИ CSV
-        csv_data = df_validator.to_csv(index=False).encode('utf-8-sig')
+        # Кнопка выгрузки
+        csv_data = df_validator_sliding.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            label="📥 Скачать CSV с полной историей сигналов (каждая сделка)",
+            label="📥 Скачать CSV (скользящая валидация)",
             data=csv_data,
-            file_name=f"validator_signals_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"validator_sliding_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
         )
+        
+        # Анализ аномалии ARC (если есть в данных)
+        arc_signals = df_validator_sliding[df_validator_sliding["Символ"] == "ARC"]
+        if not arc_signals.empty:
+            st.markdown("##### 🔍 Специальный анализ: сигналы по ARC")
+            st.dataframe(arc_signals[["Дата_сигнала", "Решение", "Доходность_180", "Макс_Просадка"]], use_container_width=True, hide_index=True)
+            st.caption("Примечание: если ARC получил «Игнор» при высокой доходности, это может означать, что порог качества слишком высок или ликвидность актива низкая. Новые пороги (Качество<35 → Игнор) уже снижены.")
     else:
-        st.info("Недостаточно исторических данных для валидации. Попробуйте позже.")
+        st.info("Недостаточно исторических данных для скользящей валидации. Попробуйте позже.")
 
 # ============================================================
 # ОТДЕЛЬНАЯ ТАБЛИЦА РЕЙТИНГА СЕКТОРОВ
@@ -644,4 +675,4 @@ st.dataframe(sector_rank, use_container_width=True)
 # ============================================================
 moscow_time = datetime.now(timezone(timedelta(hours=3)))
 st.markdown("---")
-st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Версия 5.2 — исправлена просадка, увеличена история до 3000 дней, добавлена выгрузка CSV.")
+st.caption(f"📅 Синхронизация: {moscow_time.strftime('%Y-%m-%d %H:%M:%S')} (МСК) | Версия 5.3 — скользящее окно валидации, ужесточены пороги покупки, штраф за низкую ликвидность для крипты, исключены SBER.ME и MTSS.ME, понижен порог Игнора.")
